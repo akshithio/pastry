@@ -1,6 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { mistral } from "@ai-sdk/mistral";
 import { generateText, streamText } from "ai";
+import { nanoid } from "nanoid";
 import { type NextRequest } from "next/server";
 import { auth } from "~/server/auth/config";
 import { db } from "~/server/db";
@@ -15,6 +16,8 @@ interface RequestBody {
   stream?: boolean;
   system?: string;
   provider: "mistral" | "gemini";
+  conversationId?: string;
+  resumeStreamId?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -25,22 +28,28 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json()) as RequestBody;
-    const { messages, stream = true, system, provider } = body;
+    const {
+      messages,
+      stream = true,
+      system,
+      provider,
+      conversationId,
+      resumeStreamId,
+    } = body;
 
-    // Extract conversation ID from the request headers (useChat sends it automatically)
-    const conversationId = req.headers.get("x-vercel-ai-chat-id");
+    const finalConversationId =
+      conversationId ?? req.headers.get("x-vercel-ai-chat-id");
 
-    if (!conversationId) {
+    if (!finalConversationId) {
       return Response.json(
         { error: "Conversation ID required" },
         { status: 400 },
       );
     }
 
-    // Verify conversation belongs to user
     const conversation = await db.conversation.findFirst({
       where: {
-        id: conversationId,
+        id: finalConversationId,
         userId: session.user.id,
       },
     });
@@ -52,6 +61,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (resumeStreamId) {
+      const existingMessage = await db.message.findFirst({
+        where: {
+          streamId: resumeStreamId,
+          userId: session.user.id,
+          conversationId: finalConversationId,
+        },
+      });
+
+      if (!existingMessage) {
+        return Response.json({ error: "Stream not found" }, { status: 404 });
+      }
+
+      return Response.json(
+        { error: "Stream resume not implemented" },
+        { status: 501 },
+      );
+    }
+
     const userMessage = messages[messages.length - 1];
     if (!userMessage || userMessage.role !== "user") {
       return Response.json(
@@ -60,10 +88,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Save user message to database
     await db.message.create({
       data: {
-        conversationId: conversationId,
+        conversationId: finalConversationId,
         userId: session.user.id,
         role: "user",
         content: userMessage.content,
@@ -76,33 +103,102 @@ export async function POST(req: NextRequest) {
         : google("gemini-2.0-flash");
 
     if (stream) {
+      const streamId = nanoid();
+      let assistantMessageId: string | null = null;
+      let accumulatedText = "";
+
       const result = streamText({
         model,
-        system: system ?? "You are a helpful AI assistant.",
-        messages: messages, // Pass full conversation history
-        onFinish: async (completion) => {
-          // Save assistant message to database after streaming completes
+        system:
+          system ??
+          "You are a highly capable AI assistant focused on providing helpful, accurate, and well-structured responses. Adapt your communication style to match the user's needs - be concise for simple questions and comprehensive for complex topics. For technical requests, provide clean code with clear explanations and best practices. For creative tasks, be original and engaging while meeting the user's specific requirements. Always strive for accuracy and acknowledge when you're uncertain about information. Break down complex problems into clear steps, ask for clarification when requests are ambiguous, and focus on understanding the user's underlying goals rather than just their literal request. Maintain a friendly, professional tone while being direct and practical in your assistance.",
+        messages: messages,
+
+        onStart: async () => {
           try {
-            await db.message.create({
+            const assistantMessage = await db.message.create({
               data: {
-                conversationId: conversationId,
+                conversationId: finalConversationId,
                 userId: session.user.id,
                 role: "assistant",
-                content: completion.text,
+                content: "",
+                isStreaming: true,
+                streamId: streamId,
+                partialContent: "",
               },
             });
+            assistantMessageId = assistantMessage.id;
+          } catch (error) {
+            console.error("Error creating initial assistant message:", error);
+          }
+        },
 
-            // Update conversation's updatedAt timestamp
+        onChunk: async ({ chunk }) => {
+          if (assistantMessageId && chunk.type === "text-delta") {
+            accumulatedText += chunk.textDelta;
+            try {
+              await db.message.update({
+                where: { id: assistantMessageId },
+                data: {
+                  partialContent: accumulatedText,
+                },
+              });
+            } catch (error) {
+              console.error("Error updating partial content:", error);
+            }
+          }
+        },
+
+        onFinish: async (completion) => {
+          console.log("RAW AI RESPONSE:", JSON.stringify(completion, null, 2));
+
+          try {
+            if (assistantMessageId) {
+              await db.message.update({
+                where: { id: assistantMessageId },
+                data: {
+                  content: completion.text,
+                  isStreaming: false,
+                  partialContent: null,
+                },
+              });
+            } else {
+              await db.message.create({
+                data: {
+                  conversationId: finalConversationId,
+                  userId: session.user.id,
+                  role: "assistant",
+                  content: completion.text,
+                  isStreaming: false,
+                  streamId: streamId,
+                },
+              });
+            }
+
             await db.conversation.update({
-              where: { id: conversationId },
+              where: { id: finalConversationId },
               data: { updatedAt: new Date() },
             });
           } catch (error) {
             console.error("Error saving assistant message:", error);
           }
         },
-        onError({ error }) {
+
+        onError: async ({ error }) => {
           console.error("Stream error:", error);
+
+          if (assistantMessageId) {
+            try {
+              await db.message.update({
+                where: { id: assistantMessageId },
+                data: {
+                  isStreaming: false,
+                },
+              });
+            } catch (dbError) {
+              console.error("Error updating message on stream error:", dbError);
+            }
+          }
         },
       });
 
@@ -114,19 +210,20 @@ export async function POST(req: NextRequest) {
         messages: messages,
       });
 
-      // Save assistant message to database
+      console.log("RAW AI RESPONSE:", JSON.stringify(result, null, 2));
+
       await db.message.create({
         data: {
-          conversationId: conversationId,
+          conversationId: finalConversationId,
           userId: session.user.id,
           role: "assistant",
           content: result.text,
+          isStreaming: false,
         },
       });
 
-      // Update conversation's updatedAt timestamp
       await db.conversation.update({
-        where: { id: conversationId },
+        where: { id: finalConversationId },
         data: { updatedAt: new Date() },
       });
 

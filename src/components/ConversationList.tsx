@@ -1,3 +1,5 @@
+"use client";
+
 import { Pin, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { saans } from "~/utils/fonts";
@@ -85,22 +87,28 @@ export default function ConversationList({
   return (
     <div className={`${saans.className} flex-1 overflow-y-auto font-medium`}>
       <div className="p-2">
-        <div
-          className="mb-2 px-2 py-1 text-base"
-          style={{ color: "#8b7355" }}
-        >
+        <div className="mb-2 px-2 py-1 text-base" style={{ color: "#8B9BAE" }}>
           Threads
         </div>
         {sortedConversations.map((conv) => (
           <div
             key={conv.id}
-            className="group relative mb-1 cursor-pointer rounded px-2 py-2 transition-colors hover:bg-[#e8dcc6]"
-            style={{ color: "#5a4a37" }}
+            className="group relative mb-1 cursor-pointer rounded px-2 py-2 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.08)]"
+            style={{
+              color: "#4C5461",
+              backgroundColor: "transparent",
+            }}
             onClick={() => onConversationClick(conv.id)}
             onContextMenu={(e) => onContextMenu(e, conv.id)}
             onDoubleClick={() => startRenaming(conv)}
-            onMouseEnter={() => setHoveredId(conv.id)}
-            onMouseLeave={() => setHoveredId(null)}
+            onMouseEnter={(e) => {
+              setHoveredId(conv.id);
+              e.currentTarget.style.backgroundColor = "rgba(5,81,206,0.04)";
+            }}
+            onMouseLeave={(e) => {
+              setHoveredId(null);
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
           >
             {renamingId === conv.id ? (
               <input
@@ -120,7 +128,12 @@ export default function ConversationList({
                 }}
                 autoFocus
                 className="w-full rounded border-0 outline-none"
-                style={{ backgroundColor: "transparent", color: "#5a4a37" }}
+                style={{
+                  backgroundColor: "transparent",
+                  color: "#4C5461",
+                  border: "1px solid rgba(5,81,206,0.2)",
+                  padding: "2px 4px",
+                }}
               />
             ) : (
               <div className="flex items-center justify-between">
@@ -137,10 +150,10 @@ export default function ConversationList({
 
                   {tooltipVisible === conv.id && (
                     <div
-                      className="absolute top-full left-1/2 z-50 mt-2 max-w-xs -translate-x-1/2 scale-100 transform rounded px-2 py-1 text-xs whitespace-nowrap opacity-100 shadow-lg transition-all duration-200 ease-in-out"
+                      className="absolute top-full left-1/2 z-50 mt-2 max-w-xs -translate-x-1/2 scale-100 transform rounded px-2 py-1 text-xs whitespace-nowrap opacity-100 shadow-[0_4px_8px_rgba(5,81,206,0.2)] transition-all duration-200 ease-in-out"
                       style={{
-                        backgroundColor: "#2d2d2d",
-                        color: "#ffffff",
+                        backgroundColor: "#4C5461",
+                        color: "#F7F7F2",
                         animation: "tooltipFadeIn 0.2s ease-out",
                       }}
                     >
@@ -153,7 +166,7 @@ export default function ConversationList({
                   {conv.isPinned && hoveredId !== conv.id && (
                     <Pin
                       className="h-3 w-3 flex-shrink-0"
-                      style={{ color: "#8b7355" }}
+                      style={{ color: "#8B9BAE" }}
                     />
                   )}
 
@@ -166,21 +179,29 @@ export default function ConversationList({
                   >
                     <button
                       onClick={(e) => handlePinClick(e, conv.id)}
-                      className={`rounded p-1 transition-colors hover:bg-[#d4c4a8] ${
-                        conv.isPinned ? "bg-[#d4c4a8]" : ""
+                      className={`rounded p-1 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.15)] ${
+                        conv.isPinned ? "bg-[rgba(5,81,206,0.1)]" : ""
                       }`}
+                      style={{
+                        backgroundColor: conv.isPinned
+                          ? "rgba(5,81,206,0.1)"
+                          : "rgba(5,81,206,0.05)",
+                      }}
                       title={conv.isPinned ? "Unpin" : "Pin"}
                     >
                       <Pin
                         className={`h-3 w-3 ${
                           conv.isPinned ? "fill-current" : ""
                         }`}
-                        style={{ color: "#8b7355" }}
+                        style={{ color: conv.isPinned ? "#0551CE" : "#8B9BAE" }}
                       />
                     </button>
                     <button
                       onClick={(e) => handleDeleteClick(e, conv.id)}
-                      className="rounded p-1 transition-colors hover:bg-red-100"
+                      className="rounded p-1 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(220,38,38,0.15)]"
+                      style={{
+                        backgroundColor: "rgba(220,38,38,0.05)",
+                      }}
                       title="Delete"
                     >
                       <Trash2

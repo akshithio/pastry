@@ -15,6 +15,7 @@ import {
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { saans } from "~/utils/fonts";
 
 type APIKey = {
   id: string;
@@ -536,7 +537,7 @@ export default function SettingsPage() {
                       </div>
                       <div className="mt-1 flex items-center gap-2">
                         <span
-                          className="font-mono text-xs"
+                          className=" text-xs"
                           style={{ color: "#8b7355" }}
                         >
                           {showApiKey[apiKey.id]
@@ -657,7 +658,7 @@ export default function SettingsPage() {
 
   return (
     <div
-      className="flex min-h-screen font-mono"
+      className={`flex min-h-screen ${saans.className} font-medium`}
       style={{ backgroundColor: "#f5f1e8" }}
     >
       {/* Left Sidebar */}

@@ -1,6 +1,13 @@
 @import "tailwindcss";
-
+/* 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+} */
+
+.auth-clean-shadow {
+  box-shadow: 
+    0 1px 3px rgba(5, 81, 206, 0.08),
+    0 4px 8px rgba(5, 81, 206, 0.04);
 }

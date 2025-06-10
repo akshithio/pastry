@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { MessageSquare, Plus } from "lucide-react";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import * as Dialog from "@radix-ui/react-dialog";
+import { saans } from "~/utils/fonts";
 
 interface CommandMenuProps {
   conversations?: Array<{
@@ -49,18 +50,18 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
     >
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black/50"
-        style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
+        className="fixed inset-0 bg-black/30"
+        style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
       />
 
       {/* Command Menu */}
       <div
-        className="fixed top-1/2 left-1/2 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border shadow-lg"
+        className="fixed top-1/2 left-1/2 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded border shadow-[0_4px_12px_rgba(5,81,206,0.15)]"
         role="dialog"
         aria-labelledby="command-menu-title"
         style={{
-          backgroundColor: "#f5f1e8",
-          borderColor: "#d4c4a8",
+          backgroundColor: "#F7F7F2",
+          borderColor: "rgba(5,81,206,0.12)",
         }}
       >
         {/* Hidden title for accessibility using Radix DialogTitle */}
@@ -69,22 +70,22 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
         </VisuallyHidden.Root>
 
         <Command
-          className="rounded-lg font-mono text-sm"
-          style={{ backgroundColor: "#f5f1e8" }}
+          className={`rounded ${saans.className} text-sm font-medium`}
+          style={{ backgroundColor: "#F7F7F2" }}
         >
           <Command.Input
             placeholder="Type a command or search..."
             className="w-full border-0 border-b px-4 py-3 outline-none"
             style={{
               backgroundColor: "transparent",
-              borderColor: "#e2d5c0",
-              color: "#5a4a37",
+              borderColor: "rgba(5,81,206,0.12)",
+              color: "#4C5461",
             }}
           />
           <Command.List className="max-h-80 overflow-y-auto p-2">
             <Command.Empty
               className="px-4 py-6 text-center"
-              style={{ color: "#8b7355" }}
+              style={{ color: "#8B9BAE" }}
             >
               No results found.
             </Command.Empty>
@@ -92,12 +93,21 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
             <Command.Group heading="Actions">
               <Command.Item
                 onSelect={handleNewChat}
-                className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-colors hover:bg-gray-100"
-                style={{ color: "#5a4a37" }}
+                className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)]"
+                style={{
+                  color: "#4C5461",
+                  backgroundColor: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(5,81,206,0.05)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
               >
                 <Plus className="h-4 w-4" />
                 <span>New Chat</span>
-                <div className="ml-auto text-xs" style={{ color: "#8b7355" }}>
+                <div className="ml-auto text-xs" style={{ color: "#8B9BAE" }}>
                   ⌘ Shift O
                 </div>
               </Command.Item>
@@ -110,13 +120,23 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
                     key={conversation.id}
                     value={conversation.title}
                     onSelect={() => handleSelectConversation(conversation.id)}
-                    className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-colors hover:bg-gray-100"
-                    style={{ color: "#5a4a37" }}
+                    className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)]"
+                    style={{
+                      color: "#4C5461",
+                      backgroundColor: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor =
+                        "rgba(5,81,206,0.05)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }}
                   >
                     <MessageSquare className="h-4 w-4" />
                     <div className="flex-1 truncate">
                       <div className="truncate">{conversation.title}</div>
-                      <div className="text-xs" style={{ color: "#8b7355" }}>
+                      <div className="text-xs" style={{ color: "#8B9BAE" }}>
                         {new Date(conversation.createdAt).toLocaleDateString()}
                       </div>
                     </div>

@@ -1,4 +1,4 @@
-import { Pin, Trash2, Pencil } from "lucide-react"; // Import Pencil icon
+import { Pin, Trash2, Pencil } from "lucide-react";
 import { forwardRef } from "react";
 
 type ContextMenuProps = {
@@ -9,7 +9,7 @@ type ContextMenuProps = {
   isPinned: boolean;
   onPin: () => void;
   onDelete: () => void;
-  onRename: () => void; // New prop for rename
+  onRename: () => void;
 };
 
 const ContextMenu = forwardRef<HTMLDivElement, ContextMenuProps>(
@@ -19,34 +19,52 @@ const ContextMenu = forwardRef<HTMLDivElement, ContextMenuProps>(
     return (
       <div
         ref={ref}
-        className="fixed z-50 rounded border shadow-lg"
+        className="fixed z-50 rounded border shadow-[0_4px_12px_rgba(5,81,206,0.2)]"
         style={{
           left: x,
           top: y,
-          backgroundColor: "#ebe0d0",
-          borderColor: "#d4c4a8",
+          backgroundColor: "#F7F7F2",
+          borderColor: "rgba(5,81,206,0.12)",
         }}
       >
         <button
-          onClick={onRename} 
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[#e8dcc6]"
-          style={{ color: "#5a4a37" }}
+          onClick={onRename}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-all duration-200 first:rounded-t last:rounded-b hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)]"
+          style={{ color: "#4C5461" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(5,81,206,0.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
         >
           <Pencil className="h-3 w-3" />
           Rename
         </button>
         <button
           onClick={onPin}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[#e8dcc6]"
-          style={{ color: "#5a4a37" }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-all duration-200 first:rounded-t last:rounded-b hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)]"
+          style={{ color: "#4C5461" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(5,81,206,0.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
         >
           <Pin className="h-3 w-3" />
           {isPinned ? "Unpin" : "Pin"}
         </button>
         <button
           onClick={onDelete}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[#e8dcc6]"
-          style={{ color: "#d44444" }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-all duration-200 first:rounded-t last:rounded-b hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(220,38,38,0.15)]"
+          style={{ color: "#dc2626" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(220,38,38,0.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
         >
           <Trash2 className="h-3 w-3" />
           Delete

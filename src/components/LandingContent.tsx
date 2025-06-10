@@ -62,9 +62,9 @@ export default function LandingContent({
   const getCategoryStyle = (category: Category) => {
     const isActive = activeCategory === category;
     return {
-      backgroundColor: isActive ? "#d4c4a8" : "#ebe0d0",
-      borderColor: "#d4c4a8",
-      color: "#5a4a37",
+      backgroundColor: isActive ? "#0551CE" : "#F7F7F2",
+      borderColor: "rgba(5,81,206,0.12)",
+      color: isActive ? "#F7F7F2" : "#4C5461",
       cursor: "pointer",
     };
   };
@@ -74,45 +74,38 @@ export default function LandingContent({
       <div className="max-w-2xl text-center">
         <h1
           className={`${family.className} mb-4 text-4xl font-medium`}
-          style={{ color: "#5a4a37" }}
+          style={{ color: "#4C5461" }}
         >
           How can I help you, {userName?.split(" ")[0]}?
         </h1>
 
         {/* Action Buttons */}
         <div className="mb-8 flex flex-wrap justify-center gap-4">
-          <button
-            onClick={() => handleCategoryClick("create")}
-            className="flex items-center gap-2 rounded border px-4 py-2 transition-colors hover:bg-[#d4c4a8]"
-            style={getCategoryStyle("create")}
-          >
-            <Sparkles className="h-4 w-4" />
-            Create
-          </button>
-          <button
-            onClick={() => handleCategoryClick("explore")}
-            className="flex items-center gap-2 rounded border px-4 py-2 transition-colors hover:bg-[#d4c4a8]"
-            style={getCategoryStyle("explore")}
-          >
-            <BookOpen className="h-4 w-4" />
-            Explore
-          </button>
-          <button
-            onClick={() => handleCategoryClick("code")}
-            className={`flex items-center gap-2 rounded border px-4 py-2 transition-colors hover:bg-[#d4c4a8] ${saans.className} font-medium text-[16px]`}
-            style={getCategoryStyle("code")}
-          >
-            <Code className="h-4 w-4" />
-            Code
-          </button>
-          <button
-            onClick={() => handleCategoryClick("learn")}
-            className="flex items-center gap-2 rounded border px-4 py-2 transition-colors hover:bg-[#d4c4a8]"
-            style={getCategoryStyle("learn")}
-          >
-            <Lightbulb className="h-4 w-4" />
-            Learn
-          </button>
+          {(["create", "explore", "code", "learn"] as Category[]).map(
+            (category) => {
+              const isActive = activeCategory === category;
+              const Icon = {
+                create: Sparkles,
+                explore: BookOpen,
+                code: Code,
+                learn: Lightbulb,
+              }[category];
+
+              return (
+                <button
+                  key={category}
+                  onClick={() => handleCategoryClick(category)}
+                  className={`flex items-center gap-2 rounded border px-4 py-2 shadow-[0_1px_3px_rgba(5,81,206,0.1)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_4px_8px_rgba(5,81,206,0.2)] ${
+                    category === "code" ? saans.className + " font-medium" : ""
+                  }`}
+                  style={getCategoryStyle(category)}
+                >
+                  <Icon className="h-4 w-4" />
+                  {category.charAt(0).toUpperCase() + category.slice(1)}
+                </button>
+              );
+            },
+          )}
         </div>
 
         <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -121,11 +114,11 @@ export default function LandingContent({
               key={`${activeCategory || "default"}-${index}`}
               onClick={() => onSendMessage(prompt)}
               disabled={isLoading}
-              className="cursor-pointer rounded border p-3 text-left transition-colors hover:bg-[#e8dcc6] disabled:opacity-50"
+              className="cursor-pointer rounded border p-3 text-left shadow-[0_1px_3px_rgba(5,81,206,0.08)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_4px_8px_rgba(5,81,206,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
               style={{
-                backgroundColor: "#ebe0d0",
-                borderColor: "#d4c4a8",
-                color: "#5a4a37",
+                backgroundColor: "#F7F7F2",
+                borderColor: "rgba(5,81,206,0.12)",
+                color: "#4C5461",
               }}
             >
               {prompt}

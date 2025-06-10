@@ -1,12 +1,12 @@
 "use client";
 
-import { Plus, Send } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { saans } from "~/utils/fonts";
 
 import AuthScreen from "~/components/AuthScreen";
+import ChatInput, { type ModelName } from "~/components/chat/ChatInput";
 import CommandMenu from "~/components/CommandMenu";
 import ContextMenu from "~/components/ContextMenu";
 import LandingContent from "~/components/LandingContent";
@@ -34,7 +34,8 @@ export default function HomePage() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [message, setMessage] = useState("");
-  const [selectedModel, setSelectedModel] = useState("Gemini 2.0 Flash");
+  const [selectedModel, setSelectedModel] =
+    useState<ModelName>("Gemini 2.0 Flash");
   const [isLoading, setIsLoading] = useState(false);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -44,6 +45,9 @@ export default function HomePage() {
     conversationId: null,
   });
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // NEW: Ref for the chat input to enable auto-focus
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   // NEW STATE: To control which conversation is currently being renamed (inline)
   const [conversationToRenameId, setConversationToRenameId] = useState<
@@ -59,7 +63,16 @@ export default function HomePage() {
     }
   }, [session]);
 
-  // Close context menu when clicking outside
+  useEffect(() => {
+    if (session && chatInputRef.current) {
+      const timeoutId = setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [session]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -77,6 +90,17 @@ export default function HomePage() {
     }
   }, [contextMenu.show]);
 
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+  };
+
+  // NEW: Handle filling the input from landing content prompts
+  const handleFillMessage = (promptMessage: string) => {
+    setMessage(promptMessage);
+    // Focus the input after filling the message
+    chatInputRef.current?.focus();
+  };
+
   const handleSendMessage = async () => {
     if (!message.trim() || isLoading) return;
 
@@ -93,8 +117,9 @@ export default function HomePage() {
 
       if (res.ok) {
         const newConversation = (await res.json()) as Conversation;
+        // Pass the selected model as a URL parameter
         router.push(
-          `/chat/${newConversation.id}?initialPrompt=${encodeURIComponent(message)}`,
+          `/chat/${newConversation.id}?initialPrompt=${encodeURIComponent(message)}&model=${encodeURIComponent(selectedModel)}`,
         );
       } else {
         throw new Error("Failed to create new conversation");
@@ -104,13 +129,6 @@ export default function HomePage() {
     } finally {
       setIsLoading(false);
       setMessage("");
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSendMessage();
     }
   };
 
@@ -207,8 +225,8 @@ export default function HomePage() {
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        Loading...
+      <div className="flex min-h-screen items-center justify-center bg-[#F7F7F2]">
+        <div className="text-[#4C5461]">Loading...</div>
       </div>
     );
   }
@@ -219,9 +237,11 @@ export default function HomePage() {
 
   return (
     <div
-      className="flex h-screen font-mono text-sm"
-      style={{ backgroundColor: "#f5f1e8" }}
+      className={`flex h-screen ${saans.className} auth-grid-bg relative bg-[#F7F7F2] text-sm font-medium`}
     >
+      {/* Grid overlay */}
+      <div className="auth-grid-lines pointer-events-none absolute inset-0"></div>
+
       <CommandMenu conversations={conversations} />
 
       <ContextMenu
@@ -248,59 +268,23 @@ export default function HomePage() {
         setConversationToRenameId={setConversationToRenameId}
       />
 
-      <div className="flex flex-1 flex-col">
+      <div className="relative z-10 flex flex-1 flex-col">
         <LandingContent
           userName={session.user?.name ?? "User"}
-          onSendMessage={handleSendMessage}
+          onSendMessage={handleFillMessage}
           isLoading={isLoading}
         />
 
-        <div
-          className={`border-t p-4 ${saans.className} font-medium`}
-          style={{ borderColor: "#e2d5c0" }}
-        >
-          <div className="mx-auto max-w-3xl">
-            <div className="relative">
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={handleKeyPress}
-                placeholder="Type your message here..."
-                className="w-full resize-none rounded border p-3 pr-12 outline-none"
-                style={{
-                  backgroundColor: "#ebe0d0",
-                  borderColor: "#d4c4a8",
-                  color: "#5a4a37",
-                }}
-                rows={1}
-                disabled={isLoading}
-              />
-              <button
-                onClick={() => handleSendMessage()}
-                disabled={!message.trim() || isLoading}
-                className="absolute top-[45%] right-2 -translate-y-1/2 transform rounded p-2 transition-colors disabled:opacity-50"
-                style={{
-                  backgroundColor:
-                    message.trim() && !isLoading ? "#5a4a37" : "#8b7355",
-                  color: "#f5f1e8",
-                }}
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-            <div
-              className="mt-2 flex items-center justify-between text-xs"
-              style={{ color: "#8b7355" }}
-            >
-              <div className="flex items-center gap-4">
-                <span>{selectedModel}</span>
-              </div>
-              <button className="rounded p-1">
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+        <ChatInput
+          ref={chatInputRef}
+          message={message}
+          onMessageChange={handleMessageChange}
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+          selectedModel={selectedModel}
+          onModelSelect={setSelectedModel}
+          showModelSelector={true}
+        />
       </div>
     </div>
   );

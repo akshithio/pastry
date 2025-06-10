@@ -1,3 +1,5 @@
+"use client";
+
 import Fuse from "fuse.js";
 import type { Session } from "next-auth";
 import { useMemo, useState } from "react";
@@ -61,10 +63,7 @@ export default function Sidebar({
   }, [searchQuery, fuse, conversations]);
 
   return (
-    <div
-      className="flex w-64 flex-col border-r"
-      style={{ backgroundColor: "#f5f1e8", borderColor: "#e2d5c0" }}
-    >
+    <div className="relative z-10 flex w-64 flex-col border-r border-[rgba(5,81,206,0.12)] bg-[#F7F7F2]">
       <SidebarHeader />
       <SidebarSearch
         searchQuery={searchQuery}

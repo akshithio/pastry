@@ -1,25 +1,21 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import "katex/dist/katex.min.css";
-import {
-  Check,
-  ChevronDown,
-  Copy,
-  GitBranch,
-  Plus,
-  RotateCcw,
-  Send,
-  StopCircle,
-} from "lucide-react";
+import { Check, Copy, GitBranch, Play, RotateCcw } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import remarkMath from "remark-math";
+import MarkdownRenderer, {
+  hasLatex,
+  latexStyles,
+} from "~/components/chat/MarkdownRenderer";
+import { saans } from "~/utils/fonts";
 
 import AuthScreen from "~/components/AuthScreen";
+import ChatInput, {
+  MODEL_CONFIG,
+  type ModelName,
+} from "~/components/chat/ChatInput";
 import CommandMenu from "~/components/CommandMenu";
 import ContextMenu from "~/components/ContextMenu";
 import Sidebar from "~/components/sidebar/Sidebar";
@@ -33,44 +29,14 @@ type Conversation = {
   isPinned?: boolean;
 };
 
-const latexStyles = `
-  .katex-display {
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    max-width: 100% !important;
-    margin: 1rem 0 !important;
-    padding: 0.5rem 0;
-  }
-  
-  .katex {
-    font-size: 0.9em !important;
-  }
-  
-  .katex-display > .katex {
-    white-space: nowrap !important;
-    max-width: none !important;
-  }
-  
-  .katex-display::-webkit-scrollbar {
-    height: 4px;
-  }
-  
-  .katex-display::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 2px;
-  }
-  
-  .katex-display::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 2px;
-  }
-  
-  .markdown-content {
-    overflow-wrap: break-word;
-    word-wrap: break-word;
-    word-break: break-word;
-  }
-`;
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  isStreaming?: boolean;
+  streamId?: string;
+  partialContent?: string;
+};
 
 type ContextMenuState = {
   show: boolean;
@@ -79,23 +45,6 @@ type ContextMenuState = {
   conversationId: string | null;
 };
 
-const hasLatex = (text: string): boolean => {
-  const inlineMath = /\$[^$\n]+\$/g;
-  const displayMath = /\$\$[\s\S]+?\$\$/g;
-  const latexCommands = /\\[a-zA-Z]+/g;
-
-  return (
-    inlineMath.test(text) || displayMath.test(text) || latexCommands.test(text)
-  );
-};
-
-const MODEL_CONFIG = {
-  "Gemini 2.0 Flash": { provider: "gemini" as const },
-  "Pixtral 12B": { provider: "mistral" as const },
-};
-
-type ModelName = keyof typeof MODEL_CONFIG;
-
 export default function ChatPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -103,9 +52,24 @@ export default function ChatPage() {
   const searchParams = useSearchParams();
   const conversationId = params.id as string;
 
-  const [selectedModel, setSelectedModel] = useState<ModelName>("Pixtral 12B");
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const modelFromUrl = searchParams.get("model") as ModelName | null;
+  const [selectedModel, setSelectedModel] = useState<ModelName>(
+    modelFromUrl && modelFromUrl in MODEL_CONFIG ? modelFromUrl : "Pixtral 12B",
+  );
+
+  const [interruptedMessage, setInterruptedMessage] = useState<Message | null>(
+    null,
+  );
+  const [isResuming, setIsResuming] = useState(false);
+
+  useEffect(() => {
+    const modelParam = searchParams.get("model") as ModelName | null;
+    if (modelParam && modelParam in MODEL_CONFIG) {
+      setSelectedModel(modelParam);
+    }
+  }, [searchParams]);
+
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   const {
     messages,
@@ -116,11 +80,17 @@ export default function ChatPage() {
     error,
     reload,
     stop,
+    setMessages,
   } = useChat({
     api: "/api/chat",
     id: conversationId,
     body: {
       provider: MODEL_CONFIG[selectedModel].provider,
+      conversationId: conversationId,
+      resumeStreamId: interruptedMessage?.streamId,
+    },
+    headers: {
+      "x-vercel-ai-chat-id": conversationId,
     },
     onError: (error) => {
       console.error("Chat error:", error);
@@ -132,6 +102,13 @@ export default function ChatPage() {
         finishReason,
         hasLatex: hasLatex(message.content),
       });
+
+      setInterruptedMessage(null);
+      setIsResuming(false);
+
+      setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 100);
     },
   });
 
@@ -153,12 +130,10 @@ export default function ChatPage() {
 
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Fetch conversations on mount or when session changes
   useEffect(() => {
     if (session) {
       void fetch("/api/conversations").then(async (res) =>
@@ -184,24 +159,6 @@ export default function ChatPage() {
     }
   }, [contextMenu.show]);
 
-  // Handle model dropdown click outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        modelDropdownRef.current &&
-        !modelDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowModelDropdown(false);
-      }
-    };
-
-    if (showModelDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showModelDropdown]);
-
   useEffect(() => {
     if (conversationId) {
       void fetch(`/api/conversations/${conversationId}`).then(async (res) => {
@@ -216,6 +173,28 @@ export default function ChatPage() {
   }, [conversationId]);
 
   useEffect(() => {
+    const checkForInterruptedStreams = async () => {
+      if (!conversationId || !session) return;
+
+      try {
+        const response = await fetch(
+          `/api/chat/interrupted?conversationId=${conversationId}`,
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.interruptedMessage) {
+            setInterruptedMessage(data.interruptedMessage);
+          }
+        }
+      } catch (error) {
+        console.error("Error checking for interrupted streams:", error);
+      }
+    };
+
+    void checkForInterruptedStreams();
+  }, [conversationId, session]);
+
+  useEffect(() => {
     const initialPrompt = searchParams.get("initialPrompt");
     if (
       initialPrompt &&
@@ -225,7 +204,7 @@ export default function ChatPage() {
     ) {
       const syntheticEvent: React.FormEvent<HTMLFormElement> = {
         preventDefault: () => {
-          // intentionally left blank for synthetic event
+          // empty line to prevent synthetic behavior
         },
       } as React.FormEvent<HTMLFormElement>;
       handleInputChange({
@@ -242,14 +221,96 @@ export default function ChatPage() {
     handleSubmit,
   ]);
 
-  // NEW: Branch conversation function
+  const handleChatSubmit = (e?: React.FormEvent) => {
+    handleSubmit(e);
+
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 100);
+  };
+
+  const handleResumeStream = async () => {
+    if (!interruptedMessage?.streamId) return;
+
+    setIsResuming(true);
+
+    try {
+      const response = await fetch("/api/chat/resume", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-vercel-ai-chat-id": conversationId,
+        },
+        body: JSON.stringify({
+          streamId: interruptedMessage.streamId,
+          conversationId: conversationId,
+          provider: MODEL_CONFIG[selectedModel].provider,
+        }),
+      });
+
+      if (response.ok && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        const messageIndex = messages.findIndex(
+          (m) => m.id === interruptedMessage.id,
+        );
+        if (messageIndex !== -1) {
+          let accumulatedContent = interruptedMessage.partialContent ?? "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n");
+
+            for (const line of lines) {
+              if (line.startsWith("data: ") && line !== "data: [DONE]") {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  if (data.choices?.[0]?.delta?.content) {
+                    accumulatedContent += data.choices[0].delta.content;
+
+                    setMessages((prevMessages) =>
+                      prevMessages.map((msg, idx) =>
+                        idx === messageIndex
+                          ? { ...msg, content: accumulatedContent }
+                          : msg,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  console.log("error occurred");
+                  console.log(e);
+                }
+              }
+            }
+          }
+        }
+
+        setInterruptedMessage(null);
+      }
+    } catch (error) {
+      console.error("Error resuming stream:", error);
+    } finally {
+      setIsResuming(false);
+    }
+  };
+
+  useEffect(() => {
+    if (conversation && !isLoading) {
+      setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 100);
+    }
+  }, [conversation, conversationId, isLoading]);
+
   const handleBranchConversation = async (upToMessageIndex: number) => {
     if (!conversation) return;
 
-    // Get messages up to and including the specified index
     const messagesToBranch = messages.slice(0, upToMessageIndex + 1);
 
-    // Create branch title
     const branchTitle = `[BRANCH] ${conversation.title}`;
 
     try {
@@ -258,7 +319,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: branchTitle,
-          // Include the messages to be copied
+
           initialMessages: messagesToBranch.map((msg) => ({
             role: msg.role,
             content: msg.content,
@@ -412,60 +473,12 @@ export default function ChatPage() {
 
   const handleModelSelect = (model: ModelName) => {
     setSelectedModel(model);
-    setShowModelDropdown(false);
-  };
-
-  const MarkdownRenderer = ({ children }: { children: string }) => {
-    const messageHasLatex = hasLatex(children);
-
-    return (
-      <ReactMarkdown
-        remarkPlugins={messageHasLatex ? [remarkMath] : []}
-        rehypePlugins={messageHasLatex ? [rehypeKatex] : []}
-        components={{
-          code: ({ node, inline, className, children, ...props }) => {
-            return (
-              <code
-                className={`${
-                  inline
-                    ? "rounded bg-gray-200 px-1 py-0.5"
-                    : "block rounded bg-gray-100 p-2"
-                } font-mono text-xs`}
-                {...props}
-              >
-                {children}
-              </code>
-            );
-          },
-          span: ({ node, className, children, ...props }) => {
-            if (className?.includes("katex")) {
-              return (
-                <span
-                  className={`${className} text-sm`}
-                  style={{ fontSize: "1em" }}
-                  {...props}
-                >
-                  {children}
-                </span>
-              );
-            }
-            return (
-              <span className={className} {...props}>
-                {children}
-              </span>
-            );
-          },
-        }}
-      >
-        {children}
-      </ReactMarkdown>
-    );
   };
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        Loading...
+      <div className="flex min-h-screen items-center justify-center bg-[#F7F7F2]">
+        <div className="text-[#4C5461]">Loading...</div>
       </div>
     );
   }
@@ -477,11 +490,10 @@ export default function ChatPage() {
   if (!conversation) {
     return (
       <div
-        className="flex h-screen font-mono text-sm"
-        style={{ backgroundColor: "#f5f1e8" }}
+        className={`flex h-screen ${saans.className} auth-grid-bg relative bg-[#F7F7F2] text-sm font-medium`}
       >
+        <div className="auth-grid-lines pointer-events-none absolute inset-0"></div>
         <CommandMenu conversations={conversations} />
-
         <ContextMenu
           ref={contextMenuRef}
           show={contextMenu.show}
@@ -506,11 +518,8 @@ export default function ChatPage() {
           setConversationToRenameId={setConversationToRenameId}
         />
 
-        <div
-          className="flex flex-1 items-center justify-center"
-          style={{ color: "#5a4a37" }}
-        >
-          Loading conversation...
+        <div className="relative z-10 flex flex-1 items-center justify-center">
+          <div className="text-[#4C5461]">Loading conversation...</div>
         </div>
       </div>
     );
@@ -518,9 +527,10 @@ export default function ChatPage() {
 
   return (
     <div
-      className="flex h-screen font-mono text-sm"
-      style={{ backgroundColor: "#f5f1e8" }}
+      className={`flex h-screen ${saans.className} auth-grid-bg relative bg-[#F7F7F2] text-sm font-medium`}
     >
+      <div className="auth-grid-lines pointer-events-none absolute inset-0" />
+
       <CommandMenu conversations={conversations} />
 
       <ContextMenu
@@ -547,39 +557,55 @@ export default function ChatPage() {
         setConversationToRenameId={setConversationToRenameId}
       />
 
-      <div className="flex flex-1 flex-col">
+      <div className="relative z-10 flex flex-1 flex-col">
+        {interruptedMessage && (
+          <div className="mx-auto max-w-4xl px-4 pt-4">
+            <div className="auth-clean-shadow flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-amber-500"></div>
+                <span className="text-sm text-amber-800">
+                  Generation was interrupted. You can continue from where it
+                  left off.
+                </span>
+              </div>
+              <button
+                onClick={handleResumeStream}
+                disabled={isResuming}
+                className="flex items-center gap-1 rounded bg-amber-600 px-3 py-1 text-sm text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+              >
+                <Play className="h-3 w-3" />
+                {isResuming ? "Resuming..." : "Resume"}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {messages.map((message, index) => (
-            <div key={message.id} className="mx-auto max-w-3xl">
+            <div key={message.id} className="mx-auto max-w-4xl">
               {message.role === "user" ? (
                 <div className="flex justify-end">
-                  <div
-                    className="max-w-[80%] overflow-hidden rounded-lg px-4 py-2 break-words"
-                    style={{
-                      backgroundColor: "#8b7355",
-                      color: "#f5f1e8",
-                    }}
-                  >
+                  <div className="auth-clean-shadow max-w-[80%] overflow-hidden rounded-lg bg-[#0551CE] px-4 py-2 break-words text-[#F7F7F2]">
                     <MarkdownRenderer>{message.content}</MarkdownRenderer>
                   </div>
                 </div>
               ) : (
-                <div
-                  className="group overflow-hidden"
-                  onMouseEnter={() => {}}
-                  onMouseLeave={() => {}}
-                >
-                  <div className="overflow-hidden break-words">
+                <div className="group overflow-hidden">
+                  <div className="prose prose-sm max-w-none overflow-hidden break-words text-[#4C5461]">
                     <style dangerouslySetInnerHTML={{ __html: latexStyles }} />
-                    <MarkdownRenderer>{message.content}</MarkdownRenderer>
+                    <MarkdownRenderer>
+                      {message.id === interruptedMessage?.id &&
+                      interruptedMessage.partialContent
+                        ? interruptedMessage.partialContent
+                        : message.content}
+                    </MarkdownRenderer>
 
                     <div className="mt-2 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                       <button
                         onClick={() =>
                           handleCopyResponse(message.content, message.id)
                         }
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-gray-200"
-                        style={{ color: "#8b7355" }}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[#4C5461] transition-colors hover:bg-[rgba(5,81,206,0.12)]"
                         title="Copy response"
                       >
                         {copiedMessageId === message.id ? (
@@ -596,8 +622,7 @@ export default function ChatPage() {
                       </button>
                       <button
                         onClick={() => handleRetryMessage()}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-gray-200"
-                        style={{ color: "#8b7355" }}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[#4C5461] transition-colors hover:bg-[rgba(5,81,206,0.12)]"
                         title="Retry response"
                         disabled={isLoading}
                       >
@@ -606,8 +631,7 @@ export default function ChatPage() {
                       </button>
                       <button
                         onClick={() => handleBranchConversation(index)}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-gray-200"
-                        style={{ color: "#8b7355" }}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[#4C5461] transition-colors hover:bg-[rgba(5,81,206,0.12)]"
                         title="Branch conversation from here"
                         disabled={isLoading}
                       >
@@ -622,33 +646,26 @@ export default function ChatPage() {
           ))}
 
           {isLoading && (
-            <div className="mx-auto max-w-3xl">
-              <div style={{ color: "#8b7355" }} className="leading-relaxed">
-                Thinking...
+            <div className="mx-auto max-w-4xl">
+              <div className="leading-relaxed text-[#4C5461]">
+                {isResuming ? "Resuming generation..." : "Thinking..."}
               </div>
             </div>
           )}
 
           {error && (
-            <div className="mx-auto max-w-3xl">
+            <div className="mx-auto max-w-4xl">
               <div className="flex items-start gap-3">
-                <div
-                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-xs font-medium"
-                  style={{ backgroundColor: "#dc2626", color: "#ffffff" }}
-                >
+                <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-red-600 text-xs font-medium text-white">
                   !
                 </div>
                 <div className="flex-1">
-                  <div style={{ color: "#dc2626" }} className="leading-relaxed">
+                  <div className="leading-relaxed text-red-600">
                     Error: {error.message}
                   </div>
                   <button
                     onClick={handleRegenerate}
-                    className="mt-2 rounded px-3 py-1 text-sm transition-colors"
-                    style={{
-                      backgroundColor: "#8b7355",
-                      color: "#f5f1e8",
-                    }}
+                    className="auth-clean-shadow mt-2 rounded bg-[#0551CE] px-3 py-1 text-sm text-[#F7F7F2] transition-colors hover:bg-[#044bb8]"
                   >
                     Retry
                   </button>
@@ -660,114 +677,20 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t p-4" style={{ borderColor: "#e2d5c0" }}>
-          <div className="mx-auto max-w-3xl">
-            <form onSubmit={handleSubmit}>
-              <div className="relative">
-                <textarea
-                  value={input}
-                  onChange={handleInputChange}
-                  onKeyDown={handleKeyPress}
-                  placeholder="Type your message here..."
-                  className="w-full resize-none rounded border p-3 pr-12 outline-none"
-                  style={{
-                    backgroundColor: "#ebe0d0",
-                    borderColor: "#d4c4a8",
-                    color: "#5a4a37",
-                  }}
-                  rows={Math.min(input.split("\n").length, 4)}
-                  disabled={isLoading}
-                />
-                <div className="absolute top-2 right-2 flex gap-1">
-                  {isLoading ? (
-                    <button
-                      type="button"
-                      onClick={handleStopGeneration}
-                      className="cursor-pointer rounded p-2 transition-colors disabled:opacity-50"
-                      style={{
-                        backgroundColor: input.trim() ? "#5a4a37" : "#8b7355",
-                        color: "#f5f1e8",
-                      }}
-                    >
-                      <StopCircle className="h-4 w-4" />
-                    </button>
-                  ) : (
-                    <button
-                      type="submit"
-                      disabled={!input.trim()}
-                      className="cursor-pointer rounded p-2 transition-colors disabled:opacity-50"
-                      style={{
-                        backgroundColor: input.trim() ? "#5a4a37" : "#8b7355",
-                        color: "#f5f1e8",
-                      }}
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-                <div
-                  className="mt-2 flex items-center justify-between text-xs"
-                  style={{ color: "#8b7355" }}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="relative" ref={modelDropdownRef}>
-                      <button
-                        type="button"
-                        onClick={() => setShowModelDropdown(!showModelDropdown)}
-                        className="flex items-center gap-1 rounded px-2 py-1 transition-colors hover:bg-gray-200"
-                        style={{ color: "#8b7355" }}
-                      >
-                        <span>{selectedModel}</span>
-                        <ChevronDown className="h-3 w-3" />
-                      </button>
-
-                      {showModelDropdown && (
-                        <div
-                          className="absolute bottom-full left-0 mb-2 min-w-[180px] rounded border shadow-lg"
-                          style={{
-                            backgroundColor: "#f5f1e8",
-                            borderColor: "#d4c4a8",
-                          }}
-                        >
-                          {Object.keys(MODEL_CONFIG).map((model) => (
-                            <button
-                              key={model}
-                              type="button"
-                              onClick={() =>
-                                handleModelSelect(model as ModelName)
-                              }
-                              className={`block w-full px-3 py-2 text-left text-xs transition-colors hover:bg-gray-100 ${
-                                selectedModel === model ? "font-medium" : ""
-                              }`}
-                              style={{
-                                color:
-                                  selectedModel === model
-                                    ? "#5a4a37"
-                                    : "#8b7355",
-                                backgroundColor:
-                                  selectedModel === model
-                                    ? "#ebe0d0"
-                                    : "transparent",
-                              }}
-                            >
-                              {model}
-                              <div className="text-xs opacity-60">
-                                {MODEL_CONFIG[model as ModelName].provider}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <button className="rounded p-1">
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ChatInput
+          ref={chatInputRef}
+          message={input}
+          onMessageChange={handleInputChange}
+          onSendMessage={handleChatSubmit}
+          onKeyPress={handleKeyPress}
+          isLoading={isLoading}
+          selectedModel={selectedModel}
+          onModelSelect={handleModelSelect}
+          showModelSelector={true}
+          onStopGeneration={handleStopGeneration}
+          placeholder="Type your message here..."
+          disabled={false}
+        />
       </div>
     </div>
   );
