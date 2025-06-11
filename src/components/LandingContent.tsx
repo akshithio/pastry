@@ -62,9 +62,9 @@ export default function LandingContent({
   const getCategoryStyle = (category: Category) => {
     const isActive = activeCategory === category;
     return {
-      backgroundColor: isActive ? "#0551CE" : "#F7F7F2",
+      backgroundColor: isActive ? "#0551CE" : undefined, // Let Tailwind handle the default
       borderColor: "rgba(5,81,206,0.12)",
-      color: isActive ? "#F7F7F2" : "#4C5461",
+      color: isActive ? "#F7F7F2" : undefined, // Let Tailwind handle the default
       cursor: "pointer",
     };
   };
@@ -73,8 +73,7 @@ export default function LandingContent({
     <div className="flex flex-1 flex-col items-center justify-center p-8">
       <div className="max-w-2xl text-center">
         <h1
-          className={`${family.className} mb-4 text-4xl font-medium`}
-          style={{ color: "#4C5461" }}
+          className={`${family.className} mb-4 text-4xl font-medium text-[#4C5461] dark:text-[#E5E5E5]`}
         >
           How can I help you, {userName?.split(" ")[0]}?
         </h1>
@@ -95,7 +94,11 @@ export default function LandingContent({
                 <button
                   key={category}
                   onClick={() => handleCategoryClick(category)}
-                  className={`flex items-center gap-2 rounded border px-4 py-2 shadow-[0_1px_3px_rgba(5,81,206,0.1)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_4px_8px_rgba(5,81,206,0.2)] ${
+                  className={`flex items-center gap-2 rounded border border-[rgba(5,81,206,0.12)] px-4 py-2 shadow-[0_1px_3px_rgba(5,81,206,0.1)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_4px_8px_rgba(5,81,206,0.2)] dark:border-[rgba(255,255,255,0.12)] dark:shadow-[0_1px_3px_rgba(91,155,213,0.1)] dark:hover:shadow-[0_4px_8px_rgba(91,155,213,0.2)] ${
+                    isActive
+                      ? "bg-[#0551CE] text-[#F7F7F2] dark:bg-[#5B9BD5] dark:text-[#1a1a1a]"
+                      : "bg-[#F7F7F2] text-[#4C5461] dark:bg-[#2a2a2a] dark:text-[#E5E5E5]"
+                  } ${
                     category === "code" ? saans.className + " font-medium" : ""
                   }`}
                   style={getCategoryStyle(category)}
@@ -114,12 +117,7 @@ export default function LandingContent({
               key={`${activeCategory || "default"}-${index}`}
               onClick={() => onSendMessage(prompt)}
               disabled={isLoading}
-              className="cursor-pointer rounded border p-3 text-left shadow-[0_1px_3px_rgba(5,81,206,0.08)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_4px_8px_rgba(5,81,206,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                backgroundColor: "#F7F7F2",
-                borderColor: "rgba(5,81,206,0.12)",
-                color: "#4C5461",
-              }}
+              className="cursor-pointer rounded border border-[rgba(5,81,206,0.12)] bg-[#F7F7F2] p-3 text-left text-[#4C5461] shadow-[0_1px_3px_rgba(5,81,206,0.08)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_4px_8px_rgba(5,81,206,0.15)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[rgba(255,255,255,0.12)] dark:bg-[#2a2a2a] dark:text-[#E5E5E5] dark:shadow-[0_1px_3px_rgba(91,155,213,0.08)] dark:hover:shadow-[0_4px_8px_rgba(91,155,213,0.15)]"
             >
               {prompt}
             </button>

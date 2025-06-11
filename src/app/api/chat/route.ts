@@ -1,6 +1,6 @@
 import { google } from "@ai-sdk/google";
 import { mistral } from "@ai-sdk/mistral";
-import { generateText, streamText } from "ai";
+import { streamText } from "ai";
 import { nanoid } from "nanoid";
 import { type NextRequest } from "next/server";
 import { auth } from "~/server/auth/config";
@@ -15,7 +15,8 @@ interface RequestBody {
   messages: ChatMessage[];
   stream?: boolean;
   system?: string;
-  provider: "mistral" | "gemini";
+  provider: "mistral" | "google" | "anthropic" | "openai";
+  modelId: string;
   conversationId?: string;
   resumeStreamId?: string;
 }
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
       stream = true,
       system,
       provider,
+      modelId,
       conversationId,
       resumeStreamId,
     } = body;
@@ -97,10 +99,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const model =
-      provider === "mistral"
-        ? mistral("pixtral-12b-2409")
-        : google("gemini-2.0-flash");
+    let model;
+    switch (provider) {
+      case "mistral":
+        model = mistral(modelId);
+        break;
+      case "google":
+        model = google(modelId);
+        break;
+      default:
+        return Response.json(
+          { error: `Unsupported provider: ${provider}` },
+          { status: 400 },
+        );
+    }
 
     if (stream) {
       const streamId = nanoid();
@@ -203,36 +215,37 @@ export async function POST(req: NextRequest) {
       });
 
       return result.toDataStreamResponse();
-    } else {
-      const result = await generateText({
-        model,
-        system: system ?? "You are a helpful AI assistant.",
-        messages: messages,
-      });
-
-      console.log("RAW AI RESPONSE:", JSON.stringify(result, null, 2));
-
-      await db.message.create({
-        data: {
-          conversationId: finalConversationId,
-          userId: session.user.id,
-          role: "assistant",
-          content: result.text,
-          isStreaming: false,
-        },
-      });
-
-      await db.conversation.update({
-        where: { id: finalConversationId },
-        data: { updatedAt: new Date() },
-      });
-
-      return Response.json({
-        text: result.text,
-        finishReason: result.finishReason,
-        usage: result.usage,
-      });
     }
+    // else {
+    //   const result = await generateText({
+    //     model,
+    //     system: system ?? "You are a helpful AI assistant.",
+    //     messages: messages,
+    //   });
+
+    //   console.log("RAW AI RESPONSE:", JSON.stringify(result, null, 2));
+
+    //   await db.message.create({
+    //     data: {
+    //       conversationId: finalConversationId,
+    //       userId: session.user.id,
+    //       role: "assistant",
+    //       content: result.text,
+    //       isStreaming: false,
+    //     },
+    //   });
+
+    //   await db.conversation.update({
+    //     where: { id: finalConversationId },
+    //     data: { updatedAt: new Date() },
+    //   });
+
+    //   return Response.json({
+    //     text: result.text,
+    //     finishReason: result.finishReason,
+    //     usage: result.usage,
+    //   });
+    // }
   } catch (error) {
     console.error(
       "API route error:",

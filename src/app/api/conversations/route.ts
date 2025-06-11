@@ -39,13 +39,33 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { title } = (await req.json()) as { title: string };
+    const { title, initialMessages, isBranched, isPublic } =
+      (await req.json()) as {
+        title: string;
+        initialMessages?: Array<{ role: string; content: string }>;
+        isBranched?: boolean;
+        isPublic?: boolean;
+      };
     const conversation = await db.conversation.create({
       data: {
         title,
         userId: session.user.id,
+        isBranched: isBranched ?? false,
+        isPublic: isPublic ?? false,
       },
     });
+
+    // If there are initial messages, create them
+    if (initialMessages && initialMessages.length > 0) {
+      await db.message.createMany({
+        data: initialMessages.map((msg) => ({
+          content: msg.content,
+          role: msg.role,
+          userId: session.user.id,
+          conversationId: conversation.id,
+        })),
+      });
+    }
 
     return NextResponse.json(conversation);
   } catch (error) {

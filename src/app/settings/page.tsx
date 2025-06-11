@@ -11,6 +11,7 @@ import {
   Moon,
   Sun,
   Trash2,
+  GitBranch,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -536,10 +537,7 @@ export default function SettingsPage() {
                         </span>
                       </div>
                       <div className="mt-1 flex items-center gap-2">
-                        <span
-                          className=" text-xs"
-                          style={{ color: "#8b7355" }}
-                        >
+                        <span className="text-xs" style={{ color: "#8b7355" }}>
                           {showApiKey[apiKey.id]
                             ? apiKey.key
                             : "••••••••••••••••"}

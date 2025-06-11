@@ -6,56 +6,51 @@ import { db } from "~/server/db";
 // Replace your GET method with this:
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: { id: string } },
 ) {
   const session = await auth();
+  const { id } = params;
 
-  if (!session?.user?.id) {
+  // Try to find the conversation
+  const conversation = await db.conversation.findFirst({
+    where: {
+      id: id,
+    },
+    include: {
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          content: true,
+          role: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  if (!conversation) {
+    return NextResponse.json(
+      { error: "Conversation not found" },
+      { status: 404 },
+    );
+  }
+
+  // If not public and not owner, deny
+  if (
+    !conversation.isPublic &&
+    (!session?.user?.id || conversation.userId !== session.user.id)
+  ) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const { id } = await params;
-
-    const conversation = await db.conversation.findFirst({
-      where: {
-        id: id,
-        userId: session.user.id,
-      },
-      include: {
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            content: true,
-            role: true,
-            createdAt: true,
-          }
-        }
-      }
-    });
-
-    if (!conversation) {
-      return NextResponse.json(
-        { error: "Conversation not found" },
-        { status: 404 },
-      );
-    }
-
-    return NextResponse.json(conversation);
-  } catch (error) {
-    console.error("Error fetching conversation:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json(conversation);
 }
 
 // PATCH method to update conversation (rename, pin/unpin)
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: { id: string } },
 ) {
   const session = await auth();
 
@@ -64,14 +59,24 @@ export async function PATCH(
   }
 
   try {
-    const { id } = await params; // Await params first
-    const body = (await req.json()) as { title?: string; isPinned?: boolean };
+    const { id } = params; // No await
+    const body = (await req.json()) as {
+      title?: string;
+      isPinned?: boolean;
+      isBranched?: boolean;
+      isPublic?: boolean;
+    };
 
     // Build update data object dynamically
-    const updateData: { title?: string; isPinned?: boolean; updatedAt: Date } =
-      {
-        updatedAt: new Date(),
-      };
+    const updateData: {
+      title?: string;
+      isPinned?: boolean;
+      isBranched?: boolean;
+      isPublic?: boolean;
+      updatedAt: Date;
+    } = {
+      updatedAt: new Date(),
+    };
 
     if (body.title !== undefined) {
       updateData.title = body.title;
@@ -79,6 +84,14 @@ export async function PATCH(
 
     if (body.isPinned !== undefined) {
       updateData.isPinned = body.isPinned;
+    }
+
+    if (body.isBranched !== undefined) {
+      updateData.isBranched = body.isBranched;
+    }
+
+    if (body.isPublic !== undefined) {
+      updateData.isPublic = body.isPublic;
     }
 
     const conversation = await db.conversation.update({
@@ -102,7 +115,7 @@ export async function PATCH(
 // DELETE method to delete conversation
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: { id: string } },
 ) {
   const session = await auth();
 
@@ -111,7 +124,7 @@ export async function DELETE(
   }
 
   try {
-    const { id } = await params; // Await params first
+    const { id } = params; // No await
 
     // First delete all messages in the conversation
     await db.message.deleteMany({

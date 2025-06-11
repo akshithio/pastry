@@ -14,8 +14,22 @@ interface CommandMenuProps {
   }>;
 }
 
+// Add Conversation type for type safety
+interface Conversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  userId?: string;
+  updatedAt?: string;
+  isPinned?: boolean;
+  isBranched?: boolean;
+  isPublic?: boolean;
+}
+
 export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
   const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   // Toggle the menu when ⌘K is pressed
@@ -39,6 +53,38 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
   const handleSelectConversation = (conversationId: string) => {
     router.push(`/chat/${conversationId}`);
     setOpen(false);
+  };
+
+  // Handler to create a new chat with the input as the initial message
+  const handleAskAsNewChat = async () => {
+    if (!input.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: input.length > 50 ? input.slice(0, 50) + "..." : input,
+        }),
+      });
+      if (res.ok) {
+        const newConversation = (await res.json()) as Conversation;
+        void router.push(
+          `/chat/${newConversation.id}?initialPrompt=${encodeURIComponent(input)}`,
+        );
+        setOpen(false);
+        setInput("");
+      } else {
+        // Optionally handle error
+        // eslint-disable-next-line no-console
+        console.error("Failed to create new conversation");
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Error creating conversation:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -81,28 +127,50 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
               borderColor: "rgba(5,81,206,0.12)",
               color: "#4C5461",
             }}
+            value={input}
+            onValueChange={setInput}
+            onKeyDown={(e) => {
+              if (
+                input.trim() &&
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                document.querySelector("[data-cmdk-empty]")
+              ) {
+                e.preventDefault();
+                void handleAskAsNewChat();
+              }
+            }}
+            disabled={loading}
           />
           <Command.List className="max-h-80 overflow-y-auto p-2">
             <Command.Empty
               className="px-4 py-6 text-center"
               style={{ color: "#8B9BAE" }}
+              data-cmdk-empty
             >
-              No results found.
+              {input.trim() ? (
+                <button
+                  className="rounded bg-[rgba(5,81,206,0.08)] px-4 py-2 text-[#0551CE] hover:bg-[rgba(5,81,206,0.15)] focus:ring-2 focus:ring-[#0551CE] focus:outline-none disabled:opacity-60"
+                  onClick={() => {
+                    void handleAskAsNewChat();
+                  }}
+                  disabled={loading}
+                  tabIndex={0}
+                  style={{ fontWeight: 500 }}
+                >
+                  Ask &quot;{input}&quot; as a new chat
+                </button>
+              ) : (
+                "No results found."
+              )}
             </Command.Empty>
 
             <Command.Group heading="Actions">
               <Command.Item
                 onSelect={handleNewChat}
-                className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)]"
+                className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:bg-[rgba(5,81,206,0.05)] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)] data-[selected=true]:bg-[rgba(5,81,206,0.08)]"
                 style={{
                   color: "#4C5461",
-                  backgroundColor: "transparent",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(5,81,206,0.05)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
                 }}
               >
                 <Plus className="h-4 w-4" />
@@ -118,19 +186,11 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
                 {conversations.slice(0, 5).map((conversation) => (
                   <Command.Item
                     key={conversation.id}
-                    value={conversation.title}
+                    value={`${conversation.id} ${conversation.title}`}
                     onSelect={() => handleSelectConversation(conversation.id)}
-                    className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)]"
+                    className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:bg-[rgba(5,81,206,0.05)] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)] data-[selected=true]:bg-[rgba(5,81,206,0.08)]"
                     style={{
                       color: "#4C5461",
-                      backgroundColor: "transparent",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor =
-                        "rgba(5,81,206,0.05)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
                     }}
                   >
                     <MessageSquare className="h-4 w-4" />
