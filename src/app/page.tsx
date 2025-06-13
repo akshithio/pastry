@@ -1,8 +1,8 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { saans } from "~/utils/fonts";
 
 import AuthScreen from "~/components/AuthScreen";
@@ -10,21 +10,15 @@ import ChatInput, { type ModelName } from "~/components/chat/ChatInput";
 import CommandMenu from "~/components/CommandMenu";
 import LandingContent from "~/components/LandingContent";
 import Sidebar from "~/components/sidebar/Sidebar";
+import { useConversationEvents } from "~/hooks/useConversationEvents";
+import { useLoadingConversations } from "~/hooks/useLoadingConversation";
 import { useSidebarCollapse } from "~/hooks/useSidebarCollapse";
-
-type Conversation = {
-  id: string;
-  title: string;
-  userId: string;
-  createdAt: string;
-  updatedAt: string;
-  isPinned?: boolean;
-  isBranched?: boolean;
-};
+import { type Conversation } from "~/types/conversations";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [message, setMessage] = useState("");
@@ -35,11 +29,43 @@ export default function HomePage() {
   const { isSidebarCollapsed, handleToggleSidebarCollapse, isHydrated } =
     useSidebarCollapse();
 
+  const { loadingConversationIds, addLoadingConversation } =
+    useLoadingConversations();
+
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
-  const [conversationToRenameId, setConversationToRenameId] = useState<
-    string | null
-  >(null);
+  const handleConversationCreated = useCallback(
+    (conversation: Conversation) => {
+      setConversations((prev) => {
+        const exists = prev.some((conv) => conv.id === conversation.id);
+        if (exists) return prev;
+
+        return [conversation, ...prev];
+      });
+    },
+    [],
+  );
+
+  const handleConversationUpdated = useCallback(
+    (conversation: Conversation) => {
+      setConversations((prev) =>
+        prev.map((conv) => (conv.id === conversation.id ? conversation : conv)),
+      );
+    },
+    [],
+  );
+
+  const handleConversationDeleted = useCallback((conversationId: string) => {
+    setConversations((prev) =>
+      prev.filter((conv) => conv.id !== conversationId),
+    );
+  }, []);
+
+  const { isConnected } = useConversationEvents({
+    onConversationCreated: handleConversationCreated,
+    onConversationUpdated: handleConversationUpdated,
+    onConversationDeleted: handleConversationDeleted,
+  });
 
   useEffect(() => {
     if (session) {
@@ -49,16 +75,11 @@ export default function HomePage() {
           if (!response.ok) {
             throw new Error(`Error: ${response.statusText}`);
           }
-          try {
-            const data: unknown = await response.json();
-            if (Array.isArray(data)) {
-              setConversations(data as Conversation[]);
-            } else {
-              console.error("Received data is not an array:", data);
-              setConversations([]);
-            }
-          } catch (jsonError) {
-            console.error("Failed to parse JSON:", jsonError);
+          const data = (await response.json()) as unknown;
+          if (Array.isArray(data)) {
+            setConversations(data as Conversation[]);
+          } else {
+            console.error("Received data is not an array:", data);
             setConversations([]);
           }
         } catch (error) {
@@ -72,14 +93,20 @@ export default function HomePage() {
   }, [session]);
 
   useEffect(() => {
-    if (session && chatInputRef.current) {
-      const timeoutId = setTimeout(() => {
-        chatInputRef.current?.focus();
-      }, 100);
+    if (session && pathname === "/" && chatInputRef.current) {
+      const timeouts = [100, 200, 300].map((delay) =>
+        setTimeout(() => {
+          if (chatInputRef.current && pathname === "/") {
+            chatInputRef.current.focus();
+          }
+        }, delay),
+      );
 
-      return () => clearTimeout(timeoutId);
+      return () => {
+        timeouts.forEach(clearTimeout);
+      };
     }
-  }, [session]);
+  }, [session, pathname, isHydrated]);
 
   const handleMessageChange = (
     e: string | React.ChangeEvent<HTMLTextAreaElement>,
@@ -106,16 +133,18 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: message.length > 50 ? message.slice(0, 50) + "..." : message,
+          title: "New Thread",
+          model: selectedModel,
         }),
       });
 
       if (res.ok) {
         const newConversation = (await res.json()) as Conversation;
 
-        router.push(
-          `/chat/${newConversation.id}?initialPrompt=${encodeURIComponent(message)}&model=${encodeURIComponent(selectedModel)}`,
-        );
+        addLoadingConversation(newConversation.id);
+        sessionStorage.setItem(`pendingMessage_${newConversation.id}`, message);
+
+        router.push(`/chat/${newConversation.id}`);
       } else {
         throw new Error("Failed to create new conversation");
       }
@@ -129,10 +158,6 @@ export default function HomePage() {
 
   const handleConversationClick = (conversationId: string) => {
     router.push(`/chat/${conversationId}`);
-  };
-
-  const handleDeleteConversation = (conversationId: string) => {
-    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
   };
 
   if (status === "loading" || !isHydrated) {
@@ -159,12 +184,10 @@ export default function HomePage() {
         session={session}
         conversations={conversations}
         onConversationClick={handleConversationClick}
-        onDeleteConversation={handleDeleteConversation}
-        conversationToRenameId={conversationToRenameId}
-        setConversationToRenameId={setConversationToRenameId}
         setConversations={setConversations}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
+        loadingConversationIds={loadingConversationIds}
       />
 
       <div className="relative z-10 flex flex-1 flex-col">

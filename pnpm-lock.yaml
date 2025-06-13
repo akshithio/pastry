@@ -104,6 +104,9 @@ importers:
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
+      resumable-stream:
+        specifier: ^2.2.0
+        version: 2.2.0
       tailwind-merge:
         specifier: ^3.3.1
         version: 3.3.1
@@ -2643,6 +2646,9 @@ packages:
   resolve@2.0.0-next.5:
     resolution: {integrity: sha512-U7WjGVG9sH8tvjW5SmGbQuui75FiyjAX72HX15DwBBwF9dNiQZRQAg9nnPhYy+TUnE0+VcrttuvNI8oSxZcocA==}
     hasBin: true
+
+  resumable-stream@2.2.0:
+    resolution: {integrity: sha512-538Sgz+EQV0Wv2tGzID1V/ETzh/SSWSgqHhMGchZfvNGpCeVMP8BiEK5OIqRw8Up5/ifa93STzMa/k75NhbHdA==}
 
   reusify@1.1.0:
     resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
@@ -5704,6 +5710,8 @@ snapshots:
       is-core-module: 2.16.1
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
+
+  resumable-stream@2.2.0: {}
 
   reusify@1.1.0: {}
 

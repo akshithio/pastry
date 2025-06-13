@@ -114,7 +114,7 @@ export default function LandingContent({
         <div className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2">
           {currentPrompts.map((prompt, index) => (
             <button
-              key={`${activeCategory || "default"}-${index}`}
+              key={`${activeCategory ?? "default"}-${index}`}
               onClick={() => onSendMessage(prompt)}
               disabled={isLoading}
               className="cursor-pointer rounded border border-[rgba(5,81,206,0.12)] bg-[#F7F7F2] p-3 text-left text-[#4C5461] shadow-[0_1px_3px_rgba(5,81,206,0.08)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_4px_8px_rgba(5,81,206,0.15)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[rgba(255,255,255,0.12)] dark:bg-[#2a2a2a] dark:text-[#E5E5E5] dark:shadow-[0_1px_3px_rgba(91,155,213,0.08)] dark:hover:shadow-[0_4px_8px_rgba(91,155,213,0.15)]"

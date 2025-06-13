@@ -53,6 +53,7 @@
     "react-syntax-highlighter": "^15.6.1",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
+    "resumable-stream": "^2.2.0",
     "tailwind-merge": "^3.3.1",
     "zod": "^3.25.56"
   },

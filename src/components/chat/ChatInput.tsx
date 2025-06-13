@@ -10,6 +10,7 @@ import {
   StopCircle,
   X,
 } from "lucide-react";
+import Image from "next/image";
 import React, { useEffect, useRef, useState } from "react";
 import {
   MODEL_CONFIG,
@@ -17,6 +18,12 @@ import {
   getCapabilityIcons,
 } from "~/model_config";
 import { saans } from "~/utils/fonts";
+
+interface Attachment {
+  name: string;
+  contentType: string;
+  url: string;
+}
 
 interface AttachmentFile {
   id: string;
@@ -32,7 +39,7 @@ interface ChatInputProps {
   onMessageChange: (
     message: string | React.ChangeEvent<HTMLTextAreaElement>,
   ) => void;
-  onSendMessage: (e?: React.FormEvent, attachments?: AttachmentFile[]) => void;
+  onSendMessage: (e?: React.FormEvent, attachments?: Attachment[]) => void;
   onKeyPress?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   isLoading: boolean;
   selectedModel?: ModelName;
@@ -42,7 +49,7 @@ interface ChatInputProps {
   placeholder?: string;
   disabled?: boolean;
   maxAttachments?: number;
-  maxFileSize?: number;
+  maxTotalFileSize?: number;
 }
 
 const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
@@ -60,15 +67,29 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       placeholder = "Type your message here...",
       disabled = false,
       maxAttachments = 5,
-      maxFileSize = 10,
+      maxTotalFileSize = 5,
     },
     ref,
   ) => {
     const [showModelDropdown, setShowModelDropdown] = useState(false);
-    const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+    const [attachmentFiles, setAttachmentFiles] = useState<AttachmentFile[]>(
+      [],
+    );
     const [dragOver, setDragOver] = useState(false);
     const modelDropdownRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const convertToAISDKAttachments = (
+      files: AttachmentFile[],
+    ): Attachment[] => {
+      return files
+        .filter((file) => file.preview)
+        .map((file) => ({
+          name: file.name,
+          contentType: file.file.type,
+          url: file.preview!,
+        }));
+    };
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -87,21 +108,41 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
       }
     }, [showModelDropdown]);
 
-    const validateFile = (file: File): string | null => {
+    const getTotalAttachmentSize = (
+      currentAttachments: AttachmentFile[] = attachmentFiles,
+    ): number => {
+      return currentAttachments.reduce(
+        (total, attachment) => total + attachment.size,
+        0,
+      );
+    };
+
+    const validateFile = (
+      file: File,
+      currentAttachments: AttachmentFile[] = attachmentFiles,
+    ): string | null => {
       const validTypes = [
         "image/jpeg",
         "image/png",
         "image/gif",
         "image/webp",
         "application/pdf",
+        "text/plain",
+        "text/csv",
+        "application/json",
       ];
 
       if (!validTypes.includes(file.type)) {
-        return "Only images (JPEG, PNG, GIF, WebP) and PDF files are supported.";
+        return "Only images (JPEG, PNG, GIF, WebP), PDFs, and text files are supported.";
       }
 
-      if (file.size > maxFileSize * 1024 * 1024) {
-        return `File size must be less than ${maxFileSize}MB.`;
+      const currentTotalSize = getTotalAttachmentSize(currentAttachments);
+      const maxTotalSizeBytes = maxTotalFileSize * 1024 * 1024;
+
+      if (currentTotalSize + file.size > maxTotalSizeBytes) {
+        const remainingSize = maxTotalSizeBytes - currentTotalSize;
+        const remainingSizeMB = (remainingSize / (1024 * 1024)).toFixed(1);
+        return `File too large. Total size limit is ${maxTotalFileSize}MB. You have ${remainingSizeMB}MB remaining.`;
       }
 
       return null;
@@ -109,17 +150,21 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
     const processFiles = async (fileList: FileList) => {
       const newAttachments: AttachmentFile[] = [];
+      let currentAttachmentState = [...attachmentFiles];
 
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
-        const error = validateFile(file);
+        const error = validateFile(file, currentAttachmentState);
 
         if (error) {
           alert(error);
           continue;
         }
 
-        if (attachments.length + newAttachments.length >= maxAttachments) {
+        if (
+          currentAttachmentState.length + newAttachments.length >=
+          maxAttachments
+        ) {
           alert(`Maximum ${maxAttachments} attachments allowed.`);
           break;
         }
@@ -127,37 +172,35 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         const attachment: AttachmentFile = {
           id: Date.now() + i + "",
           file: file!,
-          type: file.type.startsWith("image/") ? "image" : "pdf",
-          name: file.name,
-          size: file.size,
+          type: file!.type.startsWith("image/") ? "image" : "pdf",
+          name: file!.name,
+          size: file!.size,
         };
 
-        if (attachment.type === "image") {
-          try {
-            const preview = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = (e) => resolve(e.target?.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            });
-            attachment.preview = preview;
-          } catch (error) {
-            console.error("Error generating image preview:", error);
-          }
+        try {
+          const preview = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file!);
+          });
+          attachment.preview = preview;
+        } catch (error) {
+          console.error("Error generating file preview:", error);
         }
 
         newAttachments.push(attachment);
+        currentAttachmentState = [...currentAttachmentState, attachment];
       }
 
-      setAttachments((prev) => [...prev, ...newAttachments]);
+      setAttachmentFiles((prev) => [...prev, ...newAttachments]);
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files && files.length > 0) {
-        processFiles(files);
+        void processFiles(files);
       }
-
       e.target.value = "";
     };
 
@@ -177,12 +220,12 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
       const files = e.dataTransfer.files;
       if (files && files.length > 0) {
-        processFiles(files);
+        void processFiles(files);
       }
     };
 
     const removeAttachment = (id: string) => {
-      setAttachments((prev) => prev.filter((att) => att.id !== id));
+      setAttachmentFiles((prev) => prev.filter((att) => att.id !== id));
     };
 
     const formatFileSize = (bytes: number): string => {
@@ -200,8 +243,9 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      onSendMessage(e, attachments);
-      setAttachments([]);
+      const aiSDKAttachments = convertToAISDKAttachments(attachmentFiles);
+      onSendMessage(e, aiSDKAttachments);
+      setAttachmentFiles([]);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -209,8 +253,9 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         onKeyPress(e);
       } else if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        onSendMessage(undefined, attachments);
-        setAttachments([]);
+        const aiSDKAttachments = convertToAISDKAttachments(attachmentFiles);
+        onSendMessage(undefined, aiSDKAttachments);
+        setAttachmentFiles([]);
       }
     };
 
@@ -225,10 +270,10 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     };
 
     const modelSupportsAttachments = () => {
-      if (attachments.length === 0) return true;
+      if (attachmentFiles.length === 0) return true;
 
-      const hasImages = attachments.some((att) => att.type === "image");
-      const hasPDFs = attachments.some((att) => att.type === "pdf");
+      const hasImages = attachmentFiles.some((att) => att.type === "image");
+      const hasPDFs = attachmentFiles.some((att) => att.type === "pdf");
 
       const modelConfig = MODEL_CONFIG[selectedModel];
 
@@ -239,26 +284,30 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     };
 
     const getAttachmentWarning = () => {
-      if (attachments.length === 0) return null;
+      if (attachmentFiles.length === 0) return null;
 
-      const hasImages = attachments.some((att) => att.type === "image");
-      const hasPDFs = attachments.some((att) => att.type === "pdf");
+      const hasImages = attachmentFiles.some((att) => att.type === "image");
+      const hasPDFs = attachmentFiles.some((att) => att.type === "pdf");
 
       const modelConfig = MODEL_CONFIG[selectedModel];
 
       if (hasImages && !modelConfig.capabilities.vision) {
-        return "Selected model doesn't support image analysis";
+        return "Selected model doesn't support image analysis. Images will not be sent to model.";
       }
       if (hasPDFs && !modelConfig.capabilities.documents) {
-        return "Selected model doesn't support PDF analysis";
+        return "Selected model doesn't support PDF analysis. Documents will not be sent to model.";
       }
 
       return null;
     };
 
+    const totalSize = getTotalAttachmentSize();
+    const totalSizeMB = totalSize / (1024 * 1024);
+    const remainingMB = maxTotalFileSize - totalSizeMB;
+
     return (
       <div
-        className={`border-t p-0 ${saans.className} border-[rgba(5,81,206,0.12)] bg-[#F7F7F2]/80 font-medium backdrop-blur-sm dark:border-[rgba(255,255,255,0.12)] dark:bg-[#1a1a1a]/80`}
+        className={`p-0 ${saans.className} bg-[#F7F7F2]/80 font-medium backdrop-blur-sm dark:bg-[#1a1a1a]/80`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -270,13 +319,20 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
             </div>
           )}
 
-          {attachments.length > 0 && (
+          {attachmentFiles.length > 0 && (
             <div className="mb-3 space-y-2">
-              <div className="text-xs text-[#4C5461]/70 dark:text-[#B0B7C3]/70">
-                Attachments ({attachments.length}/{maxAttachments})
+              <div className="flex items-center justify-between text-xs text-[#4C5461]/70 dark:text-[#B0B7C3]/70">
+                <span>
+                  Attachments ({attachmentFiles.length}/{maxAttachments})
+                </span>
+                <span
+                  className={`${totalSizeMB > maxTotalFileSize * 0.8 ? "text-yellow-600 dark:text-yellow-400" : ""}`}
+                >
+                  {formatFileSize(totalSize)} / {maxTotalFileSize}MB
+                </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {attachments.map((attachment) => (
+                {attachmentFiles.map((attachment) => (
                   <div
                     key={attachment.id}
                     className="relative flex items-center gap-2 border border-[rgba(5,81,206,0.12)] bg-[#F7F7F2] p-2 text-xs dark:border-[rgba(255,255,255,0.12)] dark:bg-[#2a2a2a]"
@@ -284,9 +340,11 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     {attachment.type === "image" ? (
                       <div className="flex items-center gap-2">
                         {attachment.preview && (
-                          <img
+                          <Image
                             src={attachment.preview}
                             alt={attachment.name}
+                            width={32}
+                            height={32}
                             className="h-8 w-8 object-cover"
                           />
                         )}
@@ -338,7 +396,6 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                   disabled={isLoading || disabled}
                 />
 
-                {/* Action buttons - hidden during drag */}
                 <div
                   className={`absolute top-2 right-2 flex gap-1 transition-opacity duration-200 ${
                     dragOver ? "pointer-events-none opacity-0" : "opacity-100"
@@ -351,12 +408,15 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     disabled={
                       isLoading ||
                       disabled ||
-                      attachments.length >= maxAttachments
+                      attachmentFiles.length >= maxAttachments ||
+                      remainingMB <= 0
                     }
                     title={
-                      attachments.length >= maxAttachments
-                        ? `Maximum ${maxAttachments} attachments`
-                        : "Attach files"
+                      remainingMB <= 0
+                        ? `Total file size limit (${maxTotalFileSize}MB) reached`
+                        : attachmentFiles.length >= maxAttachments
+                          ? `Maximum ${maxAttachments} attachments`
+                          : `Attach files (${remainingMB.toFixed(1)}MB remaining)`
                     }
                   >
                     <Paperclip className="h-4 w-4" />
@@ -366,7 +426,7 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     <button
                       type="button"
                       onClick={onStopGeneration}
-                      className="border border-[#0551CE] bg-[#0551CE] p-2 text-[#F7F7F2] shadow-[0_1px_3px_rgba(5,81,206,0.2)] transition-all duration-200 hover:bg-[#044bb8] hover:shadow-[0_4px_8px_rgba(5,81,206,0.3)] disabled:opacity-50 dark:border-[#5B9BD5] dark:bg-[#5B9BD5] dark:text-[#1a1a1a] dark:shadow-[0_1px_3px_rgba(91,155,213,0.2)] dark:hover:bg-[#4A8BC7] dark:hover:shadow-[0_4px_8px_rgba(91,155,213,0.3)]"
+                      className="cursor-pointer border border-[#0551CE] bg-[#0551CE] p-2 text-[#F7F7F2] shadow-[0_1px_3px_rgba(5,81,206,0.2)] transition-all duration-200 hover:bg-[#044bb8] hover:shadow-[0_4px_8px_rgba(5,81,206,0.3)] disabled:opacity-50 dark:border-[#5B9BD5] dark:bg-[#5B9BD5] dark:text-[#1a1a1a] dark:shadow-[0_1px_3px_rgba(91,155,213,0.2)] dark:hover:bg-[#4A8BC7] dark:hover:shadow-[0_4px_8px_rgba(91,155,213,0.3)]"
                     >
                       <StopCircle className="h-4 w-4" />
                     </button>
@@ -374,7 +434,7 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                     <button
                       type="submit"
                       disabled={
-                        (!message.trim() && attachments.length === 0) ||
+                        (!message.trim() && attachmentFiles.length === 0) ||
                         isLoading ||
                         disabled ||
                         !modelSupportsAttachments()
@@ -504,10 +564,10 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                       </div>
                     </div>
                   )}
-                  {attachments.length > 0 && (
+                  {attachmentFiles.length > 0 && (
                     <span className="text-[#0551CE] dark:text-[#5B9BD5]">
-                      {attachments.length} file
-                      {attachments.length !== 1 ? "s" : ""} attached
+                      {attachmentFiles.length} file
+                      {attachmentFiles.length !== 1 ? "s" : ""} attached
                     </span>
                   )}
                 </div>
@@ -529,7 +589,8 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                   </span>
                 </div>
                 <span className="ml-2 text-[12px] font-medium">
-                  [Images and PDFs Supported]
+                  [Images and PDFs Supported - {remainingMB.toFixed(1)}MB
+                  remaining]
                 </span>
               </div>
             )}
@@ -539,7 +600,7 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*,.pdf"
+            accept="image/*,.pdf,.txt,.csv,.json"
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -552,4 +613,4 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
 ChatInput.displayName = "ChatInput";
 
 export default ChatInput;
-export { MODEL_CONFIG, type AttachmentFile, type ModelName };
+export { MODEL_CONFIG, type Attachment, type AttachmentFile, type ModelName };

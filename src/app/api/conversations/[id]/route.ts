@@ -2,52 +2,47 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { auth } from "~/server/auth/config";
 import { db } from "~/server/db";
+import { broadcastToUser } from "../events/route";
 
-// Replace your GET method with this:
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const session = await auth();
-  const { id } = params;
 
-  // Try to find the conversation
-  const conversation = await db.conversation.findFirst({
-    where: {
-      id: id,
-    },
-    include: {
-      messages: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          content: true,
-          role: true,
-          createdAt: true,
-        },
+  try {
+    const conversation = await db.conversation.findUnique({
+      where: {
+        id: params.id,
       },
-    },
-  });
+    });
 
-  if (!conversation) {
+    if (!conversation) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (conversation.isPublic) {
+      return NextResponse.json(conversation);
+    }
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (conversation.userId !== session.user.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    return NextResponse.json(conversation);
+  } catch (error) {
+    console.error("Error fetching conversation:", error);
     return NextResponse.json(
-      { error: "Conversation not found" },
-      { status: 404 },
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
-
-  // If not public and not owner, deny
-  if (
-    !conversation.isPublic &&
-    (!session?.user?.id || conversation.userId !== session.user.id)
-  ) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  return NextResponse.json(conversation);
 }
 
-// PATCH method to update conversation (rename, pin/unpin)
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } },
@@ -59,50 +54,46 @@ export async function PATCH(
   }
 
   try {
-    const { id } = params; // No await
-    const body = (await req.json()) as {
-      title?: string;
-      isPinned?: boolean;
-      isBranched?: boolean;
-      isPublic?: boolean;
-    };
+    const body = (await req.json()) as { title?: string; isPinned?: boolean };
 
-    // Build update data object dynamically
-    const updateData: {
-      title?: string;
-      isPinned?: boolean;
-      isBranched?: boolean;
-      isPublic?: boolean;
-      updatedAt: Date;
-    } = {
-      updatedAt: new Date(),
-    };
+    const conversation = await db.conversation.findUnique({
+      where: {
+        id: params.id,
+      },
+    });
 
+    if (!conversation) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (conversation.userId !== session.user.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const updateData: { title?: string; isPinned?: boolean; updatedAt?: Date } =
+      {};
     if (body.title !== undefined) {
       updateData.title = body.title;
     }
-
     if (body.isPinned !== undefined) {
       updateData.isPinned = body.isPinned;
     }
 
-    if (body.isBranched !== undefined) {
-      updateData.isBranched = body.isBranched;
-    }
+    updateData.updatedAt = conversation.updatedAt;
 
-    if (body.isPublic !== undefined) {
-      updateData.isPublic = body.isPublic;
-    }
-
-    const conversation = await db.conversation.update({
+    const updatedConversation = await db.conversation.update({
       where: {
-        id: id, // Use the awaited id
-        userId: session.user.id,
+        id: params.id,
       },
       data: updateData,
     });
 
-    return NextResponse.json(conversation);
+    broadcastToUser(session.user.id, {
+      type: "conversation_updated",
+      conversation: updatedConversation,
+    });
+
+    return NextResponse.json(updatedConversation);
   } catch (error) {
     console.error("Error updating conversation:", error);
     return NextResponse.json(
@@ -112,7 +103,6 @@ export async function PATCH(
   }
 }
 
-// DELETE method to delete conversation
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } },
@@ -124,19 +114,29 @@ export async function DELETE(
   }
 
   try {
-    const { id } = params; // No await
-
-    // First delete all messages in the conversation
-    await db.message.deleteMany({
-      where: { conversationId: id }, // Use the awaited id
+    const conversation = await db.conversation.findUnique({
+      where: {
+        id: params.id,
+      },
     });
 
-    // Then delete the conversation
+    if (!conversation) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (conversation.userId !== session.user.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     await db.conversation.delete({
       where: {
-        id: id, // Use the awaited id
-        userId: session.user.id,
+        id: params.id,
       },
+    });
+
+    broadcastToUser(session.user.id, {
+      type: "conversation_deleted",
+      conversation: conversation,
     });
 
     return NextResponse.json({ success: true });

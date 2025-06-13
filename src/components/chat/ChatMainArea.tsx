@@ -1,38 +1,15 @@
 import { type Message } from "@ai-sdk/react";
-import {
-  Check,
-  Copy,
-  GitBranch,
-  Globe,
-  Lock,
-  RotateCcw,
-  Share,
-} from "lucide-react";
+import { ArrowDown, Globe, Lock, Share } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ChatInput from "~/components/chat/ChatInput";
 import MarkdownRenderer, {
   latexStyles,
 } from "~/components/chat/MarkdownRenderer";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog";
+import { useAutoResume } from "~/hooks/useAutoResume";
 import { type ModelName } from "~/model_config";
-
-type Conversation = {
-  id: string;
-  title: string;
-  userId: string;
-  createdAt: string;
-  updatedAt: string;
-  isPinned?: boolean;
-  isBranched?: boolean;
-  isPublic?: boolean;
-};
+import type { Conversation } from "~/types/conversations";
+import { ShareDialog } from "../dialogs/ShareDialog";
+import { MessageActions } from "../MessageActions";
 
 interface ChatMainAreaProps {
   conversation: Conversation;
@@ -42,7 +19,8 @@ interface ChatMainAreaProps {
   error: Error | null;
   selectedModel: ModelName;
   isOwner: boolean;
-  chatInputRef: React.RefObject<HTMLTextAreaElement>;
+  isReadOnly?: boolean;
+  chatInputRef: React.RefObject<HTMLTextAreaElement | null>;
   handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   handleSubmit: (e?: React.FormEvent) => void;
   handleKeyPress: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -56,16 +34,24 @@ interface ChatMainAreaProps {
     messageId: string,
   ) => Promise<void>;
   copiedMessageId: string | null;
+  onUpdateConversationVisibility?: (isPublic: boolean) => Promise<void>;
+  experimental_resume: () => void;
+  data: any[];
+  setMessages: (messages: Message[]) => void;
+  autoResume?: boolean;
+  conversationId: string;
 }
 
 export default function ChatMainArea({
   conversation,
+  conversationId,
   messages,
   input,
   isLoading,
   error,
   selectedModel,
   isOwner,
+  isReadOnly = false,
   chatInputRef,
   handleInputChange,
   handleSubmit,
@@ -77,37 +63,115 @@ export default function ChatMainArea({
   handleRetryMessage,
   handleCopyResponse,
   copiedMessageId,
+  onUpdateConversationVisibility,
+  experimental_resume,
+  data,
+  setMessages,
+  autoResume = true,
 }: ChatMainAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrlCopied, setShareUrlCopied] = useState(false);
+  const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
+  const [pendingVisibilityChange, setPendingVisibilityChange] = useState<
+    boolean | null
+  >(null);
+  const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [wasNearBottomBeforeGeneration, setWasNearBottomBeforeGeneration] =
+    useState(true);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const container = messagesEndRef.current?.parentElement;
-    if (!container) return;
+  useAutoResume({
+    autoResume,
+    initialMessages: messages,
+    experimental_resume,
+    data,
+    setMessages,
+    conversationId,
+  });
 
-    const isNearBottom =
-      container.scrollTop + container.clientHeight >=
-      container.scrollHeight - 100;
-
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const handleTooltip = (show: boolean) => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = null;
     }
-  }, [messages]);
 
-  const handleChatSubmit = (e?: React.FormEvent) => {
-    handleSubmit(e);
-    setTimeout(() => {
-      chatInputRef.current?.focus();
-    }, 100);
+    if (show) {
+      tooltipTimeoutRef.current = setTimeout(() => {
+        setTooltipVisible(true);
+      }, 800);
+    } else {
+      setTooltipVisible(false);
+    }
   };
 
+  const isNearBottom = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return false;
+    return (
+      container.scrollTop + container.clientHeight >=
+      container.scrollHeight - 100
+    );
+  };
+
+  const handleScrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setWasNearBottomBeforeGeneration(true);
+  };
+
+  useEffect(() => {
+    const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+    };
+    scrollToBottom();
+    const timeouts = [
+      setTimeout(scrollToBottom, 50),
+      setTimeout(scrollToBottom, 100),
+      setTimeout(scrollToBottom, 200),
+      setTimeout(scrollToBottom, 500),
+    ];
+    return () => timeouts.forEach(clearTimeout);
+  }, []);
+
+  useEffect(() => {
+    if (isLoading) {
+      setWasNearBottomBeforeGeneration(isNearBottom());
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (isLoading && wasNearBottomBeforeGeneration) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isLoading, wasNearBottomBeforeGeneration]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      setShowScrollToBottom(!isNearBottom());
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
   const handleShareClick = () => {
+    if (isReadOnly) return;
     setShowShareDialog(true);
     setShareUrlCopied(false);
+    setPendingVisibilityChange(null);
+    setShowVisibilityDropdown(false);
   };
 
   const handleCopyShareUrl = async () => {
+    const currentVisibility = pendingVisibilityChange ?? conversation?.isPublic;
+    if (!currentVisibility) return;
+
     try {
       const shareUrl = window.location.href;
       await navigator.clipboard.writeText(shareUrl);
@@ -118,80 +182,142 @@ export default function ChatMainArea({
     }
   };
 
-  return (
-    <div className="relative z-10 flex flex-1 flex-col">
-      <button
-        onClick={handleShareClick}
-        className="sticky top-4 mr-8 ml-auto flex w-24 cursor-pointer items-center gap-2 border-1 border-solid border-[#044bb8] px-4 py-1.5 text-sm text-[#044bb8] transition-all hover:bg-[#044bb8] hover:text-[#F7F7F2] dark:border-[#5B9BD5] dark:text-[#5B9BD5] dark:hover:bg-[#5B9BD5] dark:hover:text-[#1a1a1a]"
-        title="Share this chat"
-      >
-        <Share className="h-4 w-4" />
-        Share
-      </button>
+  const handleVisibilitySelect = (isPublic: boolean) => {
+    if (isReadOnly) return;
+    setPendingVisibilityChange(isPublic);
+    setShowVisibilityDropdown(false);
+  };
 
-      {/* Messages Area */}
-      <div className="mt-4 flex-1 space-y-4 overflow-y-auto p-4">
+  const handleConfirmVisibilityChange = async () => {
+    console.log("Confirming visibility change:", pendingVisibilityChange);
+    console.log(
+      "onUpdateConversationVisibility exists:",
+      !!onUpdateConversationVisibility,
+    );
+
+    if (
+      pendingVisibilityChange === null ||
+      !onUpdateConversationVisibility ||
+      isReadOnly
+    )
+      return;
+
+    setIsUpdatingVisibility(true);
+    try {
+      console.log("Calling onUpdateConversationVisibility...");
+      await onUpdateConversationVisibility(pendingVisibilityChange);
+      console.log("Successfully updated visibility");
+      setPendingVisibilityChange(null);
+      setShowShareDialog(false);
+    } catch (err) {
+      console.error("Failed to update conversation visibility:", err);
+    } finally {
+      setIsUpdatingVisibility(false);
+    }
+  };
+
+  const handleChatSubmit = (e?: React.FormEvent) => {
+    if (isReadOnly) return;
+    handleSubmit(e);
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 100);
+  };
+
+  const renderChatMessage = (message: Message, messageIndex: number) => {
+    if (message.role === "user") {
+      return (
+        <div className="flex justify-end">
+          <div className="auth-clean-shadow max-w-[80%] overflow-hidden rounded-lg bg-[#0551CE] px-4 py-2 break-words text-[#F7F7F2] dark:bg-[#5B9BD5] dark:text-[#1a1a1a]">
+            {message.content}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="group overflow-hidden">
+        <div className="prose prose-sm mt-4 max-w-none overflow-hidden break-words text-[#4C5461] dark:text-[#111]">
+          <style dangerouslySetInnerHTML={{ __html: latexStyles }} />
+          <div className="overflow-x-auto">
+            <MarkdownRenderer>{message.content}</MarkdownRenderer>
+          </div>
+
+          <MessageActions
+            messageContent={message.content}
+            messageId={message.id}
+            messageIndex={messageIndex}
+            isOwner={isOwner}
+            isReadOnly={isReadOnly}
+            isLoading={isLoading}
+            copiedMessageId={copiedMessageId}
+            onCopyResponse={handleCopyResponse}
+            onRetryMessage={handleRetryMessage}
+            onBranchConversation={handleBranchConversation}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Integrated Conversation Header */}
+      <div className="sticky top-4 flex flex-shrink-0 items-center justify-between px-4">
+        <div className="flex cursor-pointer items-center gap-2">
+          {conversation?.isPublic ? (
+            <div
+              className="relative flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              onMouseEnter={() => handleTooltip(true)}
+              onMouseLeave={() => handleTooltip(false)}
+            >
+              <Globe className="h-3.5 w-3.5" />
+              {tooltipVisible && (
+                <div className="absolute top-full left-1/2 z-50 mt-2 max-w-xs -translate-x-1/2 rounded bg-[#4C5461] px-2 py-1 text-xs whitespace-nowrap text-[#F7F7F2] shadow-[0_4px_8px_rgba(5,81,206,0.2)] dark:bg-[#E5E5E5] dark:text-[#1a1a1a] dark:shadow-[0_4px_8px_rgba(91,155,213,0.2)]">
+                  This conversation is public
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              className="relative flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-400"
+              onMouseEnter={() => handleTooltip(true)}
+              onMouseLeave={() => handleTooltip(false)}
+            >
+              <Lock className="h-3.5 w-3.5" />
+              {tooltipVisible && (
+                <div className="absolute top-full left-1/2 z-50 mt-2 max-w-xs -translate-x-1/2 rounded bg-[#4C5461] px-2 py-1 text-xs whitespace-nowrap text-[#F7F7F2] shadow-[0_4px_8px_rgba(5,81,206,0.2)] dark:bg-[#E5E5E5] dark:text-[#1a1a1a] dark:shadow-[0_4px_8px_rgba(91,155,213,0.2)]">
+                  This conversation is private
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {isOwner && !isReadOnly && (
+          <button
+            onClick={handleShareClick}
+            className="flex w-24 cursor-pointer items-center gap-2 border-1 border-solid border-[#044bb8] px-4 py-1.5 text-sm text-[#044bb8] transition-all hover:bg-[#044bb8] hover:text-[#F7F7F2] dark:border-[#5B9BD5] dark:text-[#5B9BD5] dark:hover:bg-[#5B9BD5] dark:hover:text-[#1a1a1a]"
+            title="Share this chat"
+          >
+            <Share className="h-4 w-4" />
+            Share
+          </button>
+        )}
+      </div>
+
+      {/* Messages Container */}
+      <div
+        ref={messagesContainerRef}
+        className="mt-4 min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-4"
+      >
         {messages.map((message, index) => (
-          <div key={message.id} className="mx-auto max-w-4xl">
-            {message.role === "user" ? (
-              <div className="flex justify-end">
-                <div className="auth-clean-shadow max-w-[80%] overflow-hidden rounded-lg bg-[#0551CE] px-4 py-2 break-words text-[#F7F7F2] dark:bg-[#5B9BD5] dark:text-[#1a1a1a]">
-                  {message.content}
-                </div>
-              </div>
-            ) : (
-              <div className="group overflow-hidden">
-                <div className="prose prose-sm mt-4 max-w-none overflow-hidden break-words text-[#4C5461] dark:text-[#111]">
-                  <style dangerouslySetInnerHTML={{ __html: latexStyles }} />
-                  <MarkdownRenderer>{message.content}</MarkdownRenderer>
-                  {isOwner && (
-                    <div className="mt-2 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button
-                        onClick={() =>
-                          handleCopyResponse(message.content, message.id)
-                        }
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[#4C5461] transition-colors hover:bg-[rgba(5,81,206,0.12)] dark:text-[#B0B7C3] dark:hover:bg-[rgba(255,255,255,0.12)]"
-                        title="Copy response"
-                      >
-                        {copiedMessageId === message.id ? (
-                          <>
-                            <Check className="h-3 w-3" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-3 w-3" />
-                            Copy
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleRetryMessage(index)}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[#4C5461] transition-colors hover:bg-[rgba(5,81,206,0.12)] dark:text-[#B0B7C3] dark:hover:bg-[rgba(255,255,255,0.12)]"
-                        title="Retry response"
-                        disabled={isLoading}
-                      >
-                        <RotateCcw className="h-3 w-3" />
-                        Retry
-                      </button>
-                      <button
-                        onClick={() => handleBranchConversation(index)}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[#4C5461] transition-colors hover:bg-[rgba(5,81,206,0.12)] dark:text-[#B0B7C3] dark:hover:bg-[rgba(255,255,255,0.12)]"
-                        title="Branch conversation from here"
-                        disabled={isLoading}
-                      >
-                        <GitBranch className="h-3 w-3" />
-                        Branch
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+          <div key={message.id} className="mx-auto max-w-4xl min-w-0">
+            {renderChatMessage(message, index)}
           </div>
         ))}
 
-        {/* Loading State */}
+        {/* Integrated Loading Indicator */}
         {isLoading && (
           <div className="mx-auto max-w-4xl">
             <div className="leading-relaxed text-[#4C5461] dark:text-[#B0B7C3]">
@@ -200,14 +326,14 @@ export default function ChatMainArea({
           </div>
         )}
 
-        {/* Error State */}
-        {error && (
+        {/* Integrated Error Message */}
+        {error && !isReadOnly && (
           <div className="mx-auto max-w-4xl">
             <div className="flex items-start gap-3">
               <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-red-600 text-xs font-medium text-white dark:bg-red-500">
                 !
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <div className="leading-relaxed text-red-600 dark:text-red-400">
                   Error: {error.message}
                 </div>
@@ -225,85 +351,64 @@ export default function ChatMainArea({
         <div ref={messagesEndRef} />
       </div>
 
-      <ChatInput
-        ref={chatInputRef}
-        message={input}
-        onMessageChange={(msg) => {
-          if (typeof msg === "string") {
-            handleInputChange({
-              target: { value: msg },
-            } as React.ChangeEvent<HTMLTextAreaElement>);
-          } else {
-            handleInputChange(msg);
-          }
-        }}
-        onSendMessage={handleChatSubmit}
-        onKeyPress={handleKeyPress}
-        isLoading={isLoading}
-        selectedModel={selectedModel}
-        onModelSelect={handleModelSelect}
-        showModelSelector={true}
-        onStopGeneration={handleStopGeneration}
-        placeholder="Type your message here..."
-        disabled={!isOwner}
-      />
+      {/* Integrated Scroll to Bottom Button */}
+      {showScrollToBottom && !isLoading && (
+        <div className="sticky bottom-2 z-20 flex justify-center pb-2">
+          <button
+            onClick={handleScrollToBottom}
+            className="auth-clean-shadow flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-[#0551CE] text-[#F7F7F2] transition-all hover:bg-[#044bb8] dark:bg-[#5B9BD5] dark:text-[#1a1a1a] dark:hover:bg-[#4A8BC7]"
+            title="Scroll to bottom"
+          >
+            <ArrowDown className="h-3 w-3" />
+          </button>
+        </div>
+      )}
 
-      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
-        <DialogContent className="border border-[rgba(5,81,206,0.12)] bg-[#F7F7F2] shadow-[0_4px_12px_rgba(5,81,206,0.2)] sm:max-w-md dark:border-[rgba(255,255,255,0.12)] dark:bg-[#2a2a2a] dark:shadow-[0_4px_12px_rgba(91,155,213,0.2)]">
-          <DialogHeader>
-            <DialogTitle className="font-medium text-[#4C5461] dark:text-[#E5E5E5]">
-              Share Conversation
-            </DialogTitle>
-            <DialogDescription className="text-[#4C5461] opacity-80 dark:text-[#B0B7C3] dark:opacity-80">
-              Anyone with this link can view this conversation.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center space-x-2">
-            <div className="grid flex-1 gap-2">
-              <div className="ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border border-[rgba(5,81,206,0.12)] bg-transparent px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-[rgba(255,255,255,0.12)]">
-                <input
-                  readOnly
-                  value={
-                    typeof window !== "undefined" ? window.location.href : ""
-                  }
-                  className="w-full bg-transparent text-[#4C5461] outline-none dark:text-[#E5E5E5]"
-                />
-              </div>
-            </div>
-            <button
-              onClick={handleCopyShareUrl}
-              className="auth-clean-shadow flex items-center gap-2 rounded-lg bg-[#0551CE] px-3 py-2 text-sm text-[#F7F7F2] transition-all hover:bg-[#044bb8] dark:bg-[#5B9BD5] dark:text-[#1a1a1a] dark:hover:bg-[#4A8BC7]"
-            >
-              {shareUrlCopied ? (
-                <>
-                  <Check className="h-4 w-4" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4" />
-                  Copy
-                </>
-              )}
-            </button>
-          </div>
-          <DialogFooter className="sm:justify-start">
-            <div className="flex items-center text-xs text-[#4C5461] opacity-60 dark:text-[#B0B7C3] dark:opacity-60">
-              {conversation?.isPublic ? (
-                <>
-                  <Globe className="mr-1 h-3 w-3" />
-                  Public
-                </>
-              ) : (
-                <>
-                  <Lock className="mr-1 h-3 w-3" />
-                  Private
-                </>
-              )}
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Chat Input */}
+      {!isReadOnly && (
+        <div className="flex-shrink-0">
+          <ChatInput
+            ref={chatInputRef}
+            message={input}
+            onMessageChange={(msg) => {
+              if (typeof msg === "string") {
+                handleInputChange({
+                  target: { value: msg },
+                } as React.ChangeEvent<HTMLTextAreaElement>);
+              } else {
+                handleInputChange(msg);
+              }
+            }}
+            onSendMessage={handleChatSubmit}
+            onKeyPress={handleKeyPress}
+            isLoading={isLoading}
+            selectedModel={selectedModel}
+            onModelSelect={handleModelSelect}
+            showModelSelector={true}
+            onStopGeneration={handleStopGeneration}
+            placeholder="Type your message here..."
+            disabled={!isOwner}
+          />
+        </div>
+      )}
+
+      {!isReadOnly && (
+        <ShareDialog
+          isOpen={showShareDialog}
+          onOpenChange={setShowShareDialog}
+          conversation={conversation}
+          shareUrlCopied={shareUrlCopied}
+          showVisibilityDropdown={showVisibilityDropdown}
+          pendingVisibilityChange={pendingVisibilityChange}
+          isUpdatingVisibility={isUpdatingVisibility}
+          onCopyShareUrl={handleCopyShareUrl}
+          onVisibilityDropdownToggle={() =>
+            setShowVisibilityDropdown(!showVisibilityDropdown)
+          }
+          onVisibilitySelect={handleVisibilitySelect}
+          onConfirmVisibilityChange={handleConfirmVisibilityChange}
+        />
+      )}
     </div>
   );
 }

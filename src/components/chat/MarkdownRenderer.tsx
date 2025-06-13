@@ -11,6 +11,8 @@ export const latexStyles = `
     max-width: 100% !important;
     margin: 1.5rem 0 !important;
     padding: 0.75rem 0;
+   
+    contain: layout style;
   }
   
   .katex {
@@ -18,8 +20,12 @@ export const latexStyles = `
   }
   
   .katex-display > .katex {
-    white-space: nowrap !important;
-    max-width: none !important;
+   
+    white-space: normal !important;
+    max-width: 100% !important;
+   
+    word-wrap: break-word;
+    overflow-wrap: break-word;
   }
   
   .katex-display::-webkit-scrollbar {
@@ -40,7 +46,7 @@ export const latexStyles = `
     background: #9ca3af;
   }
 
-  /* Dark mode scrollbars for katex */
+ 
   .dark .katex-display::-webkit-scrollbar-track {
     background: #374151;
   }
@@ -60,6 +66,9 @@ export const latexStyles = `
     line-height: 1.7;
     font-size: 15px;
     color: #374151;
+   
+    contain: layout style;
+    max-width: 100%;
   }
 
   .dark .markdown-content {
@@ -85,7 +94,11 @@ export const latexStyles = `
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
     line-height: 1.7;
     color: #1f2937;
-    max-width: none;
+    max-width: 100%;
+   
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    min-width: 0;
   }
 
   .dark .enhanced-markdown {
@@ -315,7 +328,7 @@ export const latexStyles = `
     text-decoration-color: #5b9bd5;
   }
 
-  /* Better spacing for consecutive elements */
+ 
   .enhanced-markdown h1 + p,
   .enhanced-markdown h2 + p,
   .enhanced-markdown h3 + p,

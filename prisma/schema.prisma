@@ -86,20 +86,53 @@ model Conversation {
   isPinned  Boolean   @default(false)
   isBranched Boolean  @default(false)
   isPublic  Boolean   @default(false)
+  model String @default("Pixtral 12B")
+  streamIds StreamTracker[]
 }
 
 model Message {
+  id              String    @id @default(cuid())
+  conversationId  String
+  userId          String
+  role            String
+  content         String    @db.Text
+  isStreaming     Boolean   @default(false)
+  streamId        String?
+  partialContent  String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachments     MessageAttachment[] // Add this line
+  
+  @@map("messages")
+}
+
+model StreamTracker {
   id             String       @id @default(cuid())
-  content        String       @db.Text
-  role           String       // "user" or "assistant"
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId         String
+  streamId       String       @unique
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   conversationId String
+  userId         String
+  status         String       @default("active") // "active", "completed", "failed"
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
-  // New fields for resumable streams
-  isStreaming    Boolean      @default(false)
-  streamId       String?      @unique
-  partialContent String?      @db.Text // Store partial content during streaming
+  
+  @@index([conversationId])
+  @@index([streamId])
+}
+
+model MessageAttachment {
+  id          String   @id @default(cuid())
+  messageId   String
+  name        String
+  contentType String
+  url         String   @db.Text // Store data URLs
+  size        Int?
+  createdAt   DateTime @default(now())
+  
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
+  @@map("message_attachments")
 }

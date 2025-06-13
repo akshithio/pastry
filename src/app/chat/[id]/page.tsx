@@ -2,57 +2,68 @@
 
 import { useChat } from "@ai-sdk/react";
 import { useSession } from "next-auth/react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { hasLatex } from "~/components/chat/MarkdownRenderer";
 import { saans } from "~/utils/fonts";
 
+import { useConversationEvents } from "~/hooks/useConversationEvents";
+import { useLoadingConversations } from "~/hooks/useLoadingConversation";
 import { useSidebarCollapse } from "~/hooks/useSidebarCollapse";
 
 import AuthScreen from "~/components/AuthScreen";
 import ChatMainArea from "~/components/chat/ChatMainArea";
 import CommandMenu from "~/components/CommandMenu";
 import Sidebar from "~/components/sidebar/Sidebar";
+import type { Message } from "~/types/conversations";
 
 import { MODEL_CONFIG, type ModelName } from "~/model_config";
-
-type Conversation = {
-  id: string;
-  title: string;
-  userId: string;
-  createdAt: string;
-  updatedAt: string;
-  isPinned?: boolean;
-  isBranched?: boolean;
-  isPublic?: boolean;
-};
-
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-};
+import type { Conversation } from "~/types/conversations";
 
 export default function ChatPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const params = useParams();
-  const searchParams = useSearchParams();
   const conversationId = params.id as string;
+  const [selectedModel, setSelectedModel] = useState<ModelName>("Pixtral 12B");
 
-  const modelFromUrl = searchParams.get("model") as ModelName | null;
-  const [selectedModel, setSelectedModel] = useState<ModelName>(
-    modelFromUrl && modelFromUrl in MODEL_CONFIG ? modelFromUrl : "Pixtral 12B",
-  );
-
-  useEffect(() => {
-    const modelParam = searchParams.get("model") as ModelName | null;
-    if (modelParam && modelParam in MODEL_CONFIG) {
-      setSelectedModel(modelParam);
-    }
-  }, [searchParams]);
+  const { loadingConversationIds, removeLoadingConversation } =
+    useLoadingConversations();
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleChatFinish = (message, { usage, finishReason }) => {
+    console.log("Chat finished:", {
+      messageLength: message.content.length,
+      usage,
+      finishReason,
+      hasLatex: hasLatex(message.content),
+    });
+
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 100);
+
+    fetch("/api/conversations")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setConversations(data);
+
+          const updatedConversation = data.find((c) => c.id === conversationId);
+          if (updatedConversation) {
+            setConversation(updatedConversation);
+
+            if (updatedConversation.title !== "New Thread") {
+              removeLoadingConversation(conversationId);
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to update conversations after message:", err);
+      });
+  };
 
   const {
     messages,
@@ -64,6 +75,9 @@ export default function ChatPage() {
     reload,
     stop,
     setMessages,
+    data,
+    experimental_resume,
+    append,
   } = useChat({
     api: "/api/chat",
     id: conversationId,
@@ -78,104 +92,164 @@ export default function ChatPage() {
     onError: (error) => {
       console.error("Chat error:", error);
     },
-    onFinish: (message, { usage, finishReason }) => {
-      console.log("Chat finished:", {
-        messageLength: message.content.length,
-        usage,
-        finishReason,
-        hasLatex: hasLatex(message.content),
-      });
-
-      setTimeout(() => {
-        chatInputRef.current?.focus();
-      }, 100);
-    },
+    onFinish: handleChatFinish,
   });
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-
-  const [conversationToRenameId, setConversationToRenameId] = useState<
-    string | null
-  >(null);
-
+  const [conversationLoaded, setConversationLoaded] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const { isSidebarCollapsed, handleToggleSidebarCollapse, isHydrated } =
     useSidebarCollapse();
 
+  const isOwner = session?.user?.id && conversation?.userId === session.user.id;
+
+  const isPublicReadOnlyMode = conversation?.isPublic && !isOwner;
+
+  const handleConversationCreated = useCallback(
+    (conversation: Conversation) => {
+      setConversations((prev) => {
+        const exists = prev.some((conv) => conv.id === conversation.id);
+        if (exists) return prev;
+
+        return [conversation, ...prev];
+      });
+    },
+    [],
+  );
+
+  const handleConversationUpdated = useCallback(
+    (updatedConversation: Conversation) => {
+      console.log("Conversation updated via WebSocket:", updatedConversation);
+
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === updatedConversation.id ? updatedConversation : conv,
+        ),
+      );
+
+      if (updatedConversation.id === conversationId) {
+        console.log(
+          "Updating current conversation and title:",
+          updatedConversation.title,
+        );
+        setConversation(updatedConversation);
+      }
+    },
+    [conversationId],
+  );
+
+  const handleConversationDeleted = useCallback(
+    (conversationId: string) => {
+      setConversations((prev) =>
+        prev.filter((conv) => conv.id !== conversationId),
+      );
+
+      if (conversationId === params.id) {
+        router.push("/");
+      }
+    },
+    [params.id, router],
+  );
+
+  const { isConnected } = useConversationEvents({
+    onConversationCreated: handleConversationCreated,
+    onConversationUpdated: handleConversationUpdated,
+    onConversationDeleted: handleConversationDeleted,
+  });
+
   useEffect(() => {
     if (session) {
-      void fetch("/api/conversations").then(async (res) => {
-        const data = (await res.json()) as Conversation[];
-        if (Array.isArray(data)) {
-          setConversations(data);
-        } else {
+      const fetchConversations = async () => {
+        try {
+          const response = await fetch("/api/conversations");
+          if (!response.ok) {
+            throw new Error(`Error: ${response.statusText}`);
+          }
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            setConversations(data as Conversation[]);
+          } else {
+            console.error("Received data is not an array:", data);
+            setConversations([]);
+          }
+        } catch (error) {
+          console.error("Failed to fetch conversations:", error);
           setConversations([]);
         }
-      });
+      };
+
+      void fetchConversations();
     }
   }, [session]);
 
   useEffect(() => {
-    if (conversationId) {
+    console.log("Title effect triggered. Conversation:", conversation);
+
+    if (conversation?.title) {
+      console.log("Setting document title to:", conversation.title);
+      document.title = conversation.title;
+    } else {
+      console.log("Setting document title to default: Chat");
+      document.title = "Chat";
+    }
+
+    return () => {
+      document.title = "Chat";
+    };
+  }, [conversation?.title, conversation?.id]);
+
+  useEffect(() => {
+    if (session && !conversation) {
       void fetch(`/api/conversations/${conversationId}`).then(async (res) => {
         if (res.ok) {
-          const data = (await res.json()) as unknown as Conversation;
+          const data = await res.json();
+          console.log("Fetched conversation:", data);
           setConversation(data);
-        } else {
-          console.error("Failed to fetch conversation details.");
-          setConversation(null);
         }
       });
+    }
+  }, [session, conversation, conversationId]);
+
+  useEffect(() => {
+    if (conversationId) {
+      const fetchConversation = async () => {
+        try {
+          const res = await fetch(`/api/conversations/${conversationId}`);
+          if (res.ok) {
+            const data = await res.json();
+            console.log("Fetched conversation:", data);
+            setConversation(data);
+          } else if (res.status === 401) {
+            console.log("Unauthorized access to conversation");
+          } else if (res.status === 404) {
+            console.log("Conversation not found");
+          }
+        } catch (error) {
+          console.error("Failed to fetch conversation:", error);
+        } finally {
+          setConversationLoaded(true);
+        }
+      };
+
+      void fetchConversation();
     }
   }, [conversationId]);
 
   useEffect(() => {
-    const initialPrompt = searchParams.get("initialPrompt");
-    if (
-      initialPrompt &&
-      messages.length === 0 &&
-      !isLoading &&
-      conversationId
-    ) {
-      const event = {
-        target: { value: initialPrompt },
-      } as React.ChangeEvent<HTMLTextAreaElement>;
-      handleInputChange(event);
-      setTimeout(() => handleSubmit(), 0);
-    }
-  }, [
-    conversationId,
-    messages,
-    searchParams,
-    isLoading,
-    handleInputChange,
-    handleSubmit,
-  ]);
-
-  useEffect(() => {
-    if (conversationId && conversation) {
-      const loadMessages = async () => {
-        try {
-          const res = await fetch(
-            `/api/conversations/${conversationId}/messages`,
-          );
-          if (res.ok) {
-            const existingMessages: Message[] = await res.json();
-            if (existingMessages.length > 0) {
-              setMessages(existingMessages);
-            }
-          }
-        } catch (error) {
-          console.error("Failed to load existing messages:", error);
-        }
-      };
-      if (messages.length === 0) {
-        void loadMessages();
+    if (conversation && loadingConversationIds.includes(conversation.id)) {
+      if (conversation.title !== "New Thread") {
+        removeLoadingConversation(conversation.id);
       }
     }
-  }, [conversationId, conversation, setMessages, messages.length]);
+  }, [conversation, loadingConversationIds, removeLoadingConversation]);
+
+  useEffect(() => {
+    if (conversation) {
+      setSelectedModel(conversation.model || "Pixtral 12B");
+    }
+  }, [conversation]);
 
   useEffect(() => {
     if (conversationId && conversation) {
@@ -185,7 +259,7 @@ export default function ChatPage() {
             `/api/conversations/${conversationId}/messages`,
           );
           if (res.ok) {
-            const existingMessages: Message[] = await res.json();
+            const existingMessages: Message[] = (await res.json()) as Message[];
             if (existingMessages.length > 0) {
               setMessages(existingMessages);
             }
@@ -203,16 +277,101 @@ export default function ChatPage() {
     }
   }, [conversationId, conversation, setMessages, messages.length, isLoading]);
 
+  const hasAutoSentFirstMessage = useRef(false);
+
   useEffect(() => {
-    if (conversation && !isLoading) {
+    if (
+      conversation &&
+      messages.length === 0 &&
+      !isLoading &&
+      !isPublicReadOnlyMode &&
+      !hasAutoSentFirstMessage.current
+    ) {
+      const pendingMessage = sessionStorage.getItem(
+        `pendingMessage_${conversationId}`,
+      );
+
+      if (pendingMessage) {
+        hasAutoSentFirstMessage.current = true;
+
+        sessionStorage.removeItem(`pendingMessage_${conversationId}`);
+
+        void append({
+          role: "user",
+          content: pendingMessage,
+        });
+      }
+    }
+  }, [
+    conversation,
+    messages,
+    isLoading,
+    isPublicReadOnlyMode,
+    append,
+    conversationId,
+  ]);
+
+  useEffect(() => {
+    hasAutoSentFirstMessage.current = false;
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (conversation && !isLoading && !isPublicReadOnlyMode) {
       setTimeout(() => {
         chatInputRef.current?.focus();
       }, 100);
     }
-  }, [conversation, conversationId, isLoading]);
+  }, [conversation, conversationId, isLoading, isPublicReadOnlyMode]);
+
+  const handleUpdateConversationVisibility = async (
+    isPublic: boolean,
+  ): Promise<void> => {
+    if (!conversation?.id || isPublicReadOnlyMode) {
+      throw new Error(
+        "No conversation ID available or insufficient permissions",
+      );
+    }
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${conversation.id}/visibility`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            isPublic,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error || "Failed to update conversation visibility",
+        );
+      }
+
+      const updatedConversation: Conversation =
+        (await response.json()) as Conversation;
+
+      setConversation(updatedConversation);
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === updatedConversation.id ? updatedConversation : conv,
+        ),
+      );
+
+      return;
+    } catch (error) {
+      console.error("Error updating conversation visibility:", error);
+      throw error;
+    }
+  };
 
   const handleBranchConversation = async (upToMessageIndex: number) => {
-    if (!conversation) return;
+    if (!conversation || isPublicReadOnlyMode) return;
 
     const messagesToBranch = messages.slice(0, upToMessageIndex + 1);
 
@@ -234,7 +393,7 @@ export default function ChatPage() {
 
       if (res.ok) {
         const newConversation = (await res.json()) as Conversation;
-        setConversations((prev) => [newConversation, ...prev]);
+
         router.push(`/chat/${newConversation.id}`);
       } else {
         console.error("Failed to create branch conversation");
@@ -245,32 +404,28 @@ export default function ChatPage() {
   };
 
   const handleConversationClick = (clickedConversationId: string) => {
-    router.push(`/chat/${clickedConversationId}`);
-  };
-
-  const handleDeleteConversation = (deletedConversationId: string) => {
-    setConversations((prev) =>
-      prev.filter((c) => c.id !== deletedConversationId),
-    );
-
-    if (deletedConversationId === conversationId) {
-      router.push("/");
+    if (!isPublicReadOnlyMode) {
+      router.push(`/chat/${clickedConversationId}`);
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !isPublicReadOnlyMode) {
       e.preventDefault();
       handleSubmit(e);
     }
   };
 
   const handleRegenerate = () => {
-    void reload();
+    if (!isPublicReadOnlyMode) {
+      void reload();
+    }
   };
 
   const handleStopGeneration = () => {
-    stop();
+    if (!isPublicReadOnlyMode) {
+      stop();
+    }
   };
 
   const handleCopyResponse = async (
@@ -287,6 +442,8 @@ export default function ChatPage() {
   };
 
   const handleRetryMessage = (messageIndex: number) => {
+    if (isPublicReadOnlyMode) return;
+
     const messagesToKeep = messages.slice(0, messageIndex);
     setMessages(messagesToKeep);
 
@@ -296,12 +453,12 @@ export default function ChatPage() {
   };
 
   const handleModelSelect = (model: ModelName) => {
-    setSelectedModel(model);
+    if (!isPublicReadOnlyMode) {
+      setSelectedModel(model);
+    }
   };
 
-  const isOwner = session?.user?.id && conversation?.userId === session.user.id;
-
-  if (status === "loading" || !isHydrated) {
+  if (status === "loading" || !isHydrated || !conversationLoaded) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F7F7F2] dark:bg-[#1a1a1a]">
         <div className="text-[#4C5461] dark:text-[#B0B7C3]">Loading...</div>
@@ -309,7 +466,11 @@ export default function ChatPage() {
     );
   }
 
-  if (!session) {
+  if (!session && conversation && !conversation.isPublic) {
+    return <AuthScreen />;
+  }
+
+  if (!session && !conversation && conversationLoaded) {
     return <AuthScreen />;
   }
 
@@ -321,17 +482,17 @@ export default function ChatPage() {
         <div className="auth-grid-lines pointer-events-none absolute inset-0"></div>
         <CommandMenu conversations={conversations} />
 
-        <Sidebar
-          session={session}
-          conversations={conversations}
-          onConversationClick={handleConversationClick}
-          onDeleteConversation={handleDeleteConversation}
-          conversationToRenameId={conversationToRenameId}
-          setConversationToRenameId={setConversationToRenameId}
-          setConversations={setConversations}
-          isCollapsed={isSidebarCollapsed}
-          onToggleCollapse={handleToggleSidebarCollapse}
-        />
+        {!isPublicReadOnlyMode && session && (
+          <Sidebar
+            session={session}
+            conversations={conversations}
+            onConversationClick={handleConversationClick}
+            setConversations={setConversations}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={handleToggleSidebarCollapse}
+            loadingConversationIds={loadingConversationIds}
+          />
+        )}
 
         <div className="relative z-10 flex flex-1 items-center justify-center">
           <div className="text-[#4C5461] dark:text-[#B0B7C3]">
@@ -348,28 +509,30 @@ export default function ChatPage() {
     >
       <div className="auth-grid-lines pointer-events-none absolute inset-0" />
 
-      <CommandMenu conversations={conversations} />
+      {!isPublicReadOnlyMode && <CommandMenu conversations={conversations} />}
 
-      <Sidebar
-        session={session}
-        conversations={conversations}
-        onConversationClick={handleConversationClick}
-        onDeleteConversation={handleDeleteConversation}
-        conversationToRenameId={conversationToRenameId}
-        setConversationToRenameId={setConversationToRenameId}
-        setConversations={setConversations}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={handleToggleSidebarCollapse}
-      />
+      {!isPublicReadOnlyMode && session && (
+        <Sidebar
+          session={session}
+          conversations={conversations}
+          onConversationClick={handleConversationClick}
+          setConversations={setConversations}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={handleToggleSidebarCollapse}
+          activeConversationId={conversationId}
+        />
+      )}
 
       <ChatMainArea
         conversation={conversation}
+        conversationId={conversationId}
         messages={messages}
         input={input}
         isLoading={isLoading}
-        error={error}
+        error={error ?? null}
         selectedModel={selectedModel}
-        isOwner={isOwner}
+        isOwner={!!isOwner}
+        isReadOnly={isPublicReadOnlyMode}
         chatInputRef={chatInputRef}
         handleInputChange={handleInputChange}
         handleSubmit={handleSubmit}
@@ -381,6 +544,11 @@ export default function ChatPage() {
         handleRetryMessage={handleRetryMessage}
         handleCopyResponse={handleCopyResponse}
         copiedMessageId={copiedMessageId}
+        onUpdateConversationVisibility={handleUpdateConversationVisibility}
+        experimental_resume={experimental_resume}
+        data={data}
+        setMessages={setMessages}
+        autoResume={true}
       />
     </div>
   );

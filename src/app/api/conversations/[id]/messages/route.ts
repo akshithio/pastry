@@ -5,12 +5,13 @@ import { db } from "~/server/db";
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth();
+  const { id } = await params;
 
   const conversation = await db.conversation.findUnique({
-    where: { id: params.id },
+    where: { id },
     select: { userId: true, isPublic: true },
   });
 
@@ -27,7 +28,10 @@ export async function GET(
 
   try {
     const messages = await db.message.findMany({
-      where: { conversationId: params.id },
+      where: { conversationId: id },
+      include: {
+        attachments: true,
+      },
       orderBy: { createdAt: "asc" },
     });
     return NextResponse.json(messages);
@@ -39,42 +43,99 @@ export async function GET(
     );
   }
 }
-export async function POST(req: NextRequest) {
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const { id: conversationId } = await params;
+
+  const conversation = await db.conversation.findUnique({
+    where: { id: conversationId },
+    select: { userId: true, isPublic: true },
+  });
+
+  if (!conversation) {
+    return NextResponse.json(
+      { error: "Conversation not found" },
+      { status: 404 },
+    );
+  }
+
+  if (!conversation.isPublic && conversation.userId !== session.user.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = (await req.json()) as {
-      title: string;
-      initialMessages?: Array<{ role: string; content: string }>;
-      isBranched?: boolean;
+      role: string;
+      content: string;
+      isStreaming?: boolean;
+      streamId?: string;
+      partialContent?: string;
+      attachments?: Array<{
+        name: string;
+        contentType: string;
+        url: string;
+        size?: number;
+      }>;
     };
-    const { title, initialMessages, isBranched } = body;
 
-    const conversation = await db.conversation.create({
-      data: {
-        title,
-        userId: session.user.id,
-        isBranched: isBranched ?? false,
-      },
+    const {
+      role,
+      content,
+      isStreaming,
+      streamId,
+      partialContent,
+      attachments,
+    } = body;
+
+    const message = await db.$transaction(async (tx) => {
+      const newMessage = await tx.message.create({
+        data: {
+          role,
+          content,
+          isStreaming: isStreaming ?? false,
+          streamId,
+          partialContent,
+          userId: session.user.id,
+          conversationId,
+        },
+        include: {
+          attachments: true,
+        },
+      });
+
+      if (attachments && attachments.length > 0) {
+        await tx.messageAttachment.createMany({
+          data: attachments.map((attachment) => ({
+            messageId: newMessage.id,
+            name: attachment.name,
+            contentType: attachment.contentType,
+            url: attachment.url,
+            size: attachment.size,
+          })),
+        });
+
+        return await tx.message.findUnique({
+          where: { id: newMessage.id },
+          include: {
+            attachments: true,
+          },
+        });
+      }
+
+      return newMessage;
     });
 
-    if (initialMessages && initialMessages.length > 0) {
-      await db.message.createMany({
-        data: initialMessages.map((msg) => ({
-          content: msg.content,
-          role: msg.role,
-          userId: session.user.id,
-          conversationId: conversation.id,
-        })),
-      });
-    }
-
-    return NextResponse.json(conversation);
+    return NextResponse.json(message);
   } catch (error) {
-    console.error("Error creating conversation:", error);
+    console.error("Error creating message:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

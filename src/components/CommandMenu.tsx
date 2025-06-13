@@ -1,9 +1,10 @@
+import * as Dialog from "@radix-ui/react-dialog";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { Command } from "cmdk";
+import { MessageSquare, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { MessageSquare, Plus } from "lucide-react";
-import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
-import * as Dialog from "@radix-ui/react-dialog";
+import type { Conversation } from "~/types/conversations";
 import { saans } from "~/utils/fonts";
 
 interface CommandMenuProps {
@@ -14,25 +15,12 @@ interface CommandMenuProps {
   }>;
 }
 
-// Add Conversation type for type safety
-interface Conversation {
-  id: string;
-  title: string;
-  createdAt: string;
-  userId?: string;
-  updatedAt?: string;
-  isPinned?: boolean;
-  isBranched?: boolean;
-  isPublic?: boolean;
-}
-
 export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // Toggle the menu when ⌘K is pressed
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -55,7 +43,6 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
     setOpen(false);
   };
 
-  // Handler to create a new chat with the input as the initial message
   const handleAskAsNewChat = async () => {
     if (!input.trim()) return;
     setLoading(true);
@@ -75,12 +62,9 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
         setOpen(false);
         setInput("");
       } else {
-        // Optionally handle error
-        // eslint-disable-next-line no-console
         console.error("Failed to create new conversation");
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error("Error creating conversation:", error);
     } finally {
       setLoading(false);
@@ -110,7 +94,6 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
           borderColor: "rgba(5,81,206,0.12)",
         }}
       >
-        {/* Hidden title for accessibility using Radix DialogTitle */}
         <VisuallyHidden.Root>
           <Dialog.Title>Command Menu</Dialog.Title>
         </VisuallyHidden.Root>
