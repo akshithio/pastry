@@ -18,6 +18,7 @@ type SidebarProps = {
   onToggleCollapse?: () => void;
   activeConversationId?: string;
   loadingConversationIds?: string[];
+  isConversationStreaming?: (conversationId: string) => boolean;
 };
 
 export default function Sidebar({
@@ -27,8 +28,8 @@ export default function Sidebar({
   setConversations,
   isCollapsed = false,
   onToggleCollapse,
+  isConversationStreaming,
   activeConversationId,
-  loadingConversationIds = [],
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sidebarWidth, setSidebarWidth] = useState(15);
@@ -145,9 +146,9 @@ export default function Sidebar({
           <ConversationList
             conversations={filteredConversations}
             onConversationClick={onConversationClick}
+            isConversationStreaming={isConversationStreaming}
             setConversations={setConversations}
             activeConversationId={activeConversationId}
-            loadingConversationIds={loadingConversationIds}
           />
         </>
       )}

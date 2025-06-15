@@ -54,7 +54,11 @@ export async function PATCH(
   }
 
   try {
-    const body = (await req.json()) as { title?: string; isPinned?: boolean };
+    const body = (await req.json()) as {
+      title?: string;
+      isPinned?: boolean;
+      deleteMessagesAfterIndex?: number;
+    };
 
     const conversation = await db.conversation.findUnique({
       where: {
@@ -68,6 +72,31 @@ export async function PATCH(
 
     if (conversation.userId !== session.user.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (body.deleteMessagesAfterIndex !== undefined) {
+      const messages = await db.message.findMany({
+        where: {
+          conversationId: params.id,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      });
+
+      const messagesToDelete = messages.slice(
+        body.deleteMessagesAfterIndex + 1,
+      );
+
+      if (messagesToDelete.length > 0) {
+        await db.message.deleteMany({
+          where: {
+            id: {
+              in: messagesToDelete.map((msg) => msg.id),
+            },
+          },
+        });
+      }
     }
 
     const updateData: { title?: string; isPinned?: boolean; updatedAt?: Date } =

@@ -19,15 +19,15 @@ type ConversationListProps = {
   onConversationClick: (id: string) => void;
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
   activeConversationId?: string;
-  loadingConversationIds?: string[];
+  isConversationStreaming?: (conversationId: string) => boolean;
 };
 
 export default function ConversationList({
   conversations,
   onConversationClick,
   setConversations,
+  isConversationStreaming,
   activeConversationId,
-  loadingConversationIds = [],
 }: ConversationListProps) {
   const [contextMenu, setContextMenu] = useState<{
     show: boolean;
@@ -259,7 +259,9 @@ export default function ConversationList({
           </div>
           {sortedConversations.map((conv) => {
             const isActiveConversation = conv.id === activeConversationId;
-            const isLoading = loadingConversationIds.includes(conv.id);
+            const isLoading = isConversationStreaming
+              ? isConversationStreaming(conv.id)
+              : false;
 
             return (
               <div

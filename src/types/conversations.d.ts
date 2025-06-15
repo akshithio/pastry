@@ -1,4 +1,7 @@
+import { type Message } from "ai";
+
 export type Conversation = {
+  messages: Message[];
   id: string;
   title: string;
   userId: string;
@@ -10,8 +13,10 @@ export type Conversation = {
   model: string;
 };
 
-type Message = {
+// this type is wrong hehe
+export type Message = {
+  experimental_attachments: any;
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system" | "data";
   content: string;
 };

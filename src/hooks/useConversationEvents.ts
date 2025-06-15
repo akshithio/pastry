@@ -7,20 +7,28 @@ interface ConversationEvent {
     | "connected"
     | "conversation_created"
     | "conversation_updated"
-    | "conversation_deleted";
+    | "conversation_deleted"
+    | "conversation_streaming";
   conversation?: Conversation;
+  conversationId?: string;
+  isStreaming?: boolean;
 }
 
 interface UseConversationEventsProps {
   onConversationCreated?: (conversation: Conversation) => void;
   onConversationUpdated?: (conversation: Conversation) => void;
   onConversationDeleted?: (conversationId: string) => void;
+  onStreamingStatusChange?: (
+    conversationId: string,
+    isStreaming: boolean,
+  ) => void;
 }
 
 export function useConversationEvents({
   onConversationCreated,
   onConversationUpdated,
   onConversationDeleted,
+  onStreamingStatusChange,
 }: UseConversationEventsProps) {
   const { data: session } = useSession();
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -62,6 +70,15 @@ export function useConversationEvents({
           case "conversation_deleted":
             if (data.conversation && onConversationDeleted) {
               onConversationDeleted(data.conversation.id);
+            }
+            break;
+          case "conversation_streaming":
+            if (
+              data.conversationId &&
+              typeof data.isStreaming === "boolean" &&
+              onStreamingStatusChange
+            ) {
+              onStreamingStatusChange(data.conversationId, data.isStreaming);
             }
             break;
         }

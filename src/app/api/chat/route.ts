@@ -1,153 +1,60 @@
-import { google } from "@ai-sdk/google";
-import { mistral } from "@ai-sdk/mistral";
-import { createDataStream, generateText, streamText } from "ai";
-import { nanoid } from "nanoid";
+import { streamText, type CoreMessage } from "ai";
+
 import { type NextRequest } from "next/server";
+import { broadcastToUser } from "~/app/api/conversations/events/route";
 import { auth } from "~/server/auth/config";
-import { db } from "~/server/db";
-import { broadcastToUser } from "../conversations/events/route";
 
-interface ChatMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
-  experimental_attachments?: Array<{
-    name: string;
-    contentType: string;
-    url: string;
-  }>;
+import {
+  createConversation,
+  getConversation,
+  getConversationWithMessages,
+  handleTitleGeneration,
+} from "~/services/conversation-services";
+import {
+  createAssistantMessage,
+  createUserMessage,
+  processMessagesForAI,
+} from "~/services/message-services";
+import { createAIModel, DEFAULT_SYSTEM_PROMPT } from "~/utils/ai-model-factory";
+import { type RequestBody } from "~/utils/chat-utils";
+
+interface Attachment {
+  name: string;
+  contentType: string;
+  url: string;
+  processedText?: string;
+  content?: string;
 }
 
-interface RequestBody {
-  messages: ChatMessage[];
-  stream?: boolean;
-  system?: string;
-  provider: "mistral" | "google" | "anthropic" | "openai";
-  modelId: string;
-  conversationId?: string;
-  resumeStreamId?: string;
+interface EnhancedRequestBody extends RequestBody {
+  experimental_attachments?: Attachment[];
 }
 
-async function saveStreamId(
-  conversationId: string,
-  streamId: string,
-  userId: string,
-) {
-  try {
-    await db.streamTracker.create({
-      data: {
-        streamId,
-        conversationId,
-        userId,
-        status: "active",
-      },
-    });
-  } catch (error) {
-    console.error("Error saving stream ID:", error);
+function enhanceMessageWithPDFContent(
+  content: string,
+  attachments: Attachment[] = [],
+): string {
+  const pdfAttachments = attachments.filter(
+    (att) =>
+      att.contentType === "application/pdf" &&
+      (att.processedText ?? att.content),
+  );
+
+  if (pdfAttachments.length === 0) {
+    return content;
   }
-}
 
-async function updateStreamStatus(streamId: string, status: string) {
-  try {
-    await db.streamTracker.update({
-      where: { streamId },
-      data: {
-        status,
-        updatedAt: new Date(),
-      },
-    });
-  } catch (error) {
-    console.error("Error updating stream status:", error);
+  let enhancedContent = content;
+  if (content) {
+    enhancedContent += "\n\n";
   }
-}
 
-async function getOngoingMessage(conversationId: string) {
-  try {
-    return await db.message.findFirst({
-      where: {
-        conversationId,
-        isStreaming: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-  } catch (error) {
-    console.error("Error getting ongoing message:", error);
-    return null;
-  }
-}
+  pdfAttachments.forEach((pdf) => {
+    const pdfContent = pdf.content ?? pdf.processedText ?? "";
+    enhancedContent += `--- PDF Document: ${pdf.name} ---\n${pdfContent}\n--- End of PDF Document ---\n\n`;
+  });
 
-async function generateConversationTitle(
-  userMessage: string,
-  assistantResponse: string,
-) {
-  try {
-    const model = mistral("pixtral-12b-2409");
-
-    const result = await generateText({
-      model,
-      system: `You are a conversation title generator. Your task is to create concise, descriptive titles for conversations based on the user's initial message and the AI's response.
-
-Rules:
-- Generate titles that are 2-6 words long
-- Focus on the main topic or task discussed
-- Be specific and descriptive
-- Use sentence case (capitalize first word and proper nouns only)
-- Don't use quotes, punctuation, or "about" in titles
-- Make it clear what the conversation is about at a glance
-
-Examples:
-- User asks about React hooks → "React hooks tutorial"
-- User asks for recipe → "Chocolate cake recipe"
-- User asks coding question → "JavaScript array methods"
-- User asks for help with math → "Calculus derivatives explained"`,
-      messages: [
-        {
-          role: "user",
-          content: `Generate a title for this conversation:
-
-User message: "${userMessage}"
-
-AI response: "${assistantResponse.slice(0, 500)}..."
-
-Respond with only the title, nothing else.`,
-        },
-      ],
-      maxTokens: 20,
-      temperature: 0.3,
-    });
-
-    const title = result.text.trim().replace(/["""]/g, "");
-    return title;
-  } catch (error) {
-    console.error("Error generating title:", error);
-    return null;
-  }
-}
-
-async function updateConversationTitleAndBroadcast(
-  conversationId: string,
-  newTitle: string,
-  userId: string,
-) {
-  try {
-    const updatedConversation = await db.conversation.update({
-      where: { id: conversationId },
-      data: { title: newTitle },
-    });
-
-    console.log("Updated conversation title to:", newTitle);
-    console.log("Broadcasting conversation update to user:", userId);
-
-    broadcastToUser(userId, {
-      type: "conversation_updated",
-      conversation: updatedConversation,
-    });
-
-    console.log("Broadcast sent successfully");
-    return updatedConversation;
-  } catch (error) {
-    console.error("Failed to update conversation title:", error);
-    throw error;
-  }
+  return enhancedContent.trim();
 }
 
 export async function GET(req: NextRequest) {
@@ -167,12 +74,10 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const conversation = await db.conversation.findFirst({
-      where: {
-        id: conversationId,
-        userId: session.user.id,
-      },
-    });
+    const conversation = await getConversationWithMessages(
+      conversationId,
+      session.user.id,
+    );
 
     if (!conversation) {
       return Response.json(
@@ -181,80 +86,16 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const ongoingMessage = await getOngoingMessage(conversationId);
-
-    if (ongoingMessage?.partialContent) {
-      const streamWithPartialContent = createDataStream({
-        execute: (buffer) => {
-          buffer.writeData({
-            type: "append-message",
-            message: JSON.stringify({
-              id: ongoingMessage.id,
-              role: "assistant",
-              content: ongoingMessage.partialContent ?? "",
-            }),
-          });
-        },
-      });
-
-      return new Response(streamWithPartialContent, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
-    }
-
-    const recentMessage = await db.message.findFirst({
-      where: {
-        conversationId,
-        role: "assistant",
-        isStreaming: false,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (recentMessage) {
-      const streamWithMessage = createDataStream({
-        execute: (buffer) => {
-          buffer.writeData({
-            type: "append-message",
-            message: JSON.stringify({
-              id: recentMessage.id,
-              role: "assistant",
-              content: recentMessage.content,
-            }),
-          });
-        },
-      });
-
-      return new Response(streamWithMessage, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
-    }
-
-    const emptyDataStream = createDataStream({
-      execute: () => {},
-    });
-
-    return new Response(emptyDataStream, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return Response.json(conversation.messages);
   } catch (error) {
-    console.error("GET route error:", error);
-    return Response.json({ error: "Failed to resume stream" }, { status: 500 });
+    console.error(
+      "API GET /api/chat error:",
+      error instanceof Error ? error.message : String(error),
+    );
+    return Response.json(
+      { error: "Failed to process request" },
+      { status: 500 },
+    );
   }
 }
 
@@ -265,51 +106,35 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await req.json()) as RequestBody;
+    const body = (await req.json()) as EnhancedRequestBody;
     const {
       messages,
-      stream = true,
-      system,
       provider,
       modelId,
+      system,
+      experimental_attachments,
       conversationId,
     } = body;
 
-    const finalConversationId =
-      conversationId ?? req.headers.get("x-vercel-ai-chat-id");
+    let finalConversationId = conversationId;
 
-    if (!finalConversationId) {
-      return Response.json(
-        { error: "Conversation ID required" },
-        { status: 400 },
+    if (finalConversationId) {
+      const conversation = await getConversation(
+        finalConversationId,
+        session.user.id,
       );
+      if (!conversation) {
+        return Response.json(
+          { error: "Conversation not found" },
+          { status: 404 },
+        );
+      }
+    } else {
+      const newConversation = await createConversation(session.user.id);
+      finalConversationId = newConversation.id;
     }
 
-    const conversation = await db.conversation.findFirst({
-      where: {
-        id: finalConversationId,
-        userId: session.user.id,
-      },
-      include: {
-        messages: {
-          where: {
-            content: {
-              not: "__STREAM_TRACKER__",
-            },
-          },
-          orderBy: { createdAt: "asc" },
-        },
-      },
-    });
-
-    if (!conversation) {
-      return Response.json(
-        { error: "Conversation not found" },
-        { status: 404 },
-      );
-    }
-
-    const userMessage = messages[messages.length - 1];
+    const userMessage = messages.at(-1);
     if (!userMessage || userMessage.role !== "user") {
       return Response.json(
         { error: "Invalid message format" },
@@ -317,266 +142,72 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const userMessageData = await db.message.create({
-      data: {
-        conversationId: finalConversationId,
-        userId: session.user.id,
-        role: "user",
-        content: userMessage.content,
+    const content = enhanceMessageWithPDFContent(
+      userMessage.content,
+      experimental_attachments ?? [],
+    );
 
-        attachments: userMessage.experimental_attachments
-          ? JSON.stringify(userMessage.experimental_attachments)
-          : null,
+    await createUserMessage(
+      {
+        ...userMessage,
+        content,
+        experimental_attachments,
       },
-    });
+      finalConversationId,
+      session.user.id,
+    );
 
-    let model;
-    switch (provider) {
-      case "mistral":
-        model = mistral(modelId);
-        break;
-      case "google":
-        model = google(modelId);
-        break;
-      default:
-        return Response.json(
-          { error: `Unsupported provider: ${provider}` },
-          { status: 400 },
-        );
+    const model = createAIModel(provider, modelId);
+
+    const processedMessages = processMessagesForAI(messages);
+
+    const coreMessagesForAI: CoreMessage[] = processedMessages.map((msg) => ({
+      role: msg.role === "assistant" ? "assistant" : "user",
+      content: msg.content as string,
+    }));
+
+    if (coreMessagesForAI.length > 0) {
+      coreMessagesForAI.at(-1)!.content = content;
     }
 
-    const processedMessages = messages.map((msg) => {
-      if (
-        msg.experimental_attachments &&
-        msg.experimental_attachments.length > 0
-      ) {
-        const content = [
-          { type: "text", text: msg.content },
-          ...msg.experimental_attachments
-            .filter((att) => att.contentType.startsWith("image/"))
-            .map((att) => ({
-              type: "image" as const,
-              image: att.url,
-            })),
-        ];
-
-        return {
-          role: msg.role,
-          content,
-        };
-      }
-
-      return {
-        role: msg.role,
-        content: msg.content,
-      };
+    broadcastToUser(session.user.id, {
+      type: "conversation_streaming",
+      conversationId: finalConversationId,
+      isStreaming: true,
     });
 
-    if (stream) {
-      const streamId = nanoid();
-      let assistantMessageId: string | null = null;
-      let accumulatedText = "";
-
-      await saveStreamId(finalConversationId, streamId, session.user.id);
-
-      const result = streamText({
-        model,
-        system:
-          system ??
-          "You are a highly capable AI assistant focused on providing helpful, accurate, and well-structured responses. When users share images, analyze them carefully and provide detailed, relevant information. For documents, extract and summarize key information. Adapt your communication style to match the user's needs - be concise for simple questions and comprehensive for complex topics.",
-        messages: processedMessages,
-
-        async onStart() {
-          try {
-            const assistantMessage = await db.message.create({
-              data: {
-                conversationId: finalConversationId,
-                userId: session.user.id,
-                role: "assistant",
-                content: "",
-                isStreaming: true,
-                streamId: streamId,
-                partialContent: "",
-              },
-            });
-            assistantMessageId = assistantMessage.id;
-          } catch (error) {
-            console.error("Error creating initial assistant message:", error);
-          }
-        },
-
-        async onChunk({ chunk }) {
-          if (assistantMessageId && chunk.type === "text-delta") {
-            accumulatedText += chunk.textDelta;
-            try {
-              await db.message.update({
-                where: { id: assistantMessageId },
-                data: {
-                  partialContent: accumulatedText,
-                },
-              });
-            } catch (error) {
-              console.error("Error updating partial content:", error);
-            }
-          }
-        },
-
-        async onFinish(completion) {
-          try {
-            if (assistantMessageId) {
-              await db.message.update({
-                where: { id: assistantMessageId },
-                data: {
-                  content: completion.text,
-                  isStreaming: false,
-                  partialContent: null,
-                },
-              });
-            } else {
-              await db.message.create({
-                data: {
-                  conversationId: finalConversationId,
-                  userId: session.user.id,
-                  role: "assistant",
-                  content: completion.text,
-                  isStreaming: false,
-                  streamId: streamId,
-                },
-              });
-            }
-
-            await updateStreamStatus(streamId, "completed");
-
-            const currentConversation = await db.conversation.findUnique({
-              where: { id: finalConversationId },
-              include: { messages: true },
-            });
-
-            if (
-              currentConversation &&
-              currentConversation.title === "New Thread"
-            ) {
-              const userMessages = currentConversation.messages.filter(
-                (m) => m.role === "user",
-              );
-              const assistantMessages = currentConversation.messages.filter(
-                (m) => m.role === "assistant",
-              );
-
-              if (userMessages.length === 1 && assistantMessages.length === 1) {
-                const newTitle = await generateConversationTitle(
-                  userMessages[0]!.content,
-                  assistantMessages[0]!.content,
-                );
-
-                if (newTitle) {
-                  await updateConversationTitleAndBroadcast(
-                    finalConversationId,
-                    newTitle,
-                    session.user.id,
-                  );
-                } else {
-                  await db.conversation.update({
-                    where: { id: finalConversationId },
-                    data: { updatedAt: new Date() },
-                  });
-                }
-              } else {
-                await db.conversation.update({
-                  where: { id: finalConversationId },
-                  data: { updatedAt: new Date() },
-                });
-              }
-            } else {
-              await db.conversation.update({
-                where: { id: finalConversationId },
-                data: { updatedAt: new Date() },
-              });
-            }
-          } catch (error) {
-            console.error("Error saving assistant message:", error);
-            await updateStreamStatus(streamId, "failed");
-          }
-        },
-        async onError({ error }) {
-          console.error("Stream error:", error);
-
-          await updateStreamStatus(streamId, "failed");
-
-          if (assistantMessageId) {
-            try {
-              await db.message.update({
-                where: { id: assistantMessageId },
-                data: {
-                  isStreaming: false,
-                },
-              });
-            } catch (dbError) {
-              console.error("Error updating message on stream error:", dbError);
-            }
-          }
-        },
-      });
-
-      return result.toDataStreamResponse();
-    }
-
-    const completion = await generateText({
+    const result = await streamText({
       model,
-      system:
-        system ??
-        "You are a highly capable AI assistant focused on providing helpful, accurate, and well-structured responses. When users share images, analyze them carefully and provide detailed, relevant information. For documents, extract and summarize key information.",
-      messages: processedMessages,
-    });
-
-    await db.message.create({
-      data: {
-        conversationId: finalConversationId,
-        userId: session.user.id,
-        role: "assistant",
-        content: completion.text,
-        isStreaming: false,
-      },
-    });
-
-    await db.conversation.update({
-      where: { id: finalConversationId },
-      data: { updatedAt: new Date() },
-    });
-
-    const currentConversation = await db.conversation.findUnique({
-      where: { id: finalConversationId },
-      include: { messages: true },
-    });
-
-    if (currentConversation && currentConversation.title === "New Thread") {
-      const userMessages = currentConversation.messages.filter(
-        (m) => m.role === "user",
-      );
-      const assistantMessages = currentConversation.messages.filter(
-        (m) => m.role === "assistant",
-      );
-
-      if (userMessages.length === 1 && assistantMessages.length === 1) {
-        const newTitle = await generateConversationTitle(
-          userMessages[0]!.content,
-          assistantMessages[0]!.content,
-        );
-
-        if (newTitle) {
-          await updateConversationTitleAndBroadcast(
+      system: system ?? DEFAULT_SYSTEM_PROMPT,
+      messages: coreMessagesForAI,
+      async onFinish(event) {
+        try {
+          if (!finalConversationId) {
+            console.error("Conversation ID is missing after stream finish.");
+            return;
+          }
+          await createAssistantMessage(
+            event.text,
             finalConversationId,
-            newTitle,
             session.user.id,
           );
+          await handleTitleGeneration(finalConversationId, session.user.id);
+        } finally {
+          if (finalConversationId) {
+            broadcastToUser(session.user.id, {
+              type: "conversation_streaming",
+              conversationId: finalConversationId,
+              isStreaming: false,
+            });
+          }
         }
-      }
-    }
+      },
+    });
 
-    return Response.json({ text: completion.text });
+    return new Response(result.toDataStream());
   } catch (error) {
     console.error(
-      "API route error:",
+      "API POST /api/chat error:",
       error instanceof Error ? error.message : String(error),
     );
     return Response.json(

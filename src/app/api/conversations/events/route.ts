@@ -5,10 +5,14 @@ import type { Conversation } from "@prisma/client";
 
 interface ConversationEvent {
   type:
+    | "connected"
     | "conversation_created"
     | "conversation_updated"
-    | "conversation_deleted";
-  conversation: Conversation;
+    | "conversation_deleted"
+    | "conversation_streaming";
+  conversation?: Conversation;
+  conversationId?: string;
+  isStreaming?: boolean;
 }
 
 const connections = new Map<string, Set<ReadableStreamDefaultController>>();

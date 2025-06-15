@@ -1,5 +1,6 @@
 import { type Message } from "@ai-sdk/react";
 import { useEffect, useRef } from "react";
+import { type ExtendedMessage } from "~/types/chat";
 
 export type DataPart = {
   type: "append-message";
@@ -8,10 +9,12 @@ export type DataPart = {
 
 interface UseAutoResumeProps {
   autoResume: boolean;
-  initialMessages: Message[];
+    initialMessages: (Message | ExtendedMessage)[];
   experimental_resume: () => void;
   data: DataPart[];
-  setMessages: (messages: Message[] | ((prev: Message[]) => Message[])) => void;
+    setMessages: (
+    messages: (Message | ExtendedMessage)[] | ((prev: (Message | ExtendedMessage)[]) => (Message | ExtendedMessage)[]),
+  ) => void;
   conversationId: string;
 }
 
@@ -66,11 +69,7 @@ export function useAutoResume({
           .then((response) => {
             const reader = response.body?.getReader();
             if (reader) {
-              return processStreamResponse(
-                reader,
-                setMessages,
-                initialMessages,
-              );
+              return               processStreamResponse(reader, setMessages);
             }
           })
           .catch((error) => {
@@ -99,11 +98,11 @@ export function useAutoResume({
   useEffect(() => {
     if (!data || data.length === 0) return;
 
-    const dataPart = data[0] as DataPart;
+        const dataPart = data[0]!;
     if (dataPart.type === "append-message") {
       try {
         const message = JSON.parse(dataPart.message) as Message;
-        setMessages((prevMessages: Message[]) => {
+        setMessages(prevMessages => {
           const newMessages = [...prevMessages];
           const existingIndex = newMessages.findIndex(
             (m) => m.id === message.id,
@@ -126,8 +125,7 @@ export function useAutoResume({
 
 async function processStreamResponse(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  setMessages: (messages: Message[] | ((prev: Message[]) => Message[])) => void,
-  initialMessages: Message[],
+  setMessages: UseAutoResumeProps['setMessages'],
 ) {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -141,7 +139,7 @@ async function processStreamResponse(
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
 
-      buffer = lines.pop() || "";
+            buffer = lines.pop() ?? "";
 
       for (const line of lines) {
         if (line.startsWith("data: ")) {
@@ -153,19 +151,19 @@ async function processStreamResponse(
 
             const data = JSON.parse(dataStr) as DataPart;
             if (data.type === "append-message") {
-              const message = JSON.parse(data.message) as Message;
+                            const message = JSON.parse(data.message) as Message;
 
-              setMessages((prevMessages: Message[]) => {
+              setMessages(prevMessages => {
                 const newMessages = [...prevMessages];
                 const existingIndex = newMessages.findIndex(
                   (m) => m.id === message.id,
                 );
 
                 if (existingIndex >= 0) {
-                  newMessages[existingIndex] = {
-                    ...newMessages[existingIndex],
-                    content: message.content,
-                  };
+                                    const existingMessage = newMessages[existingIndex];
+                  if (existingMessage) {
+                    existingMessage.content = message.content;
+                  }
                 } else {
                   const lastMsg = newMessages[newMessages.length - 1];
                   if (

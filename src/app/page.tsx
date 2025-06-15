@@ -6,14 +6,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { saans } from "~/utils/fonts";
 
 import AuthScreen from "~/components/AuthScreen";
-import ChatInput, { type ModelName } from "~/components/chat/ChatInput";
+import ChatInput, {
+  type Attachment,
+  type ModelName,
+} from "~/components/chat/ChatInput";
 import CommandMenu from "~/components/CommandMenu";
 import LandingContent from "~/components/LandingContent";
 import Sidebar from "~/components/sidebar/Sidebar";
 import { useConversationEvents } from "~/hooks/useConversationEvents";
-import { useLoadingConversations } from "~/hooks/useLoadingConversation";
 import { useSidebarCollapse } from "~/hooks/useSidebarCollapse";
 import { type Conversation } from "~/types/conversations";
+
+import { useStreamingStatus } from "~/hooks/useStreamingStatus";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -29,10 +33,17 @@ export default function HomePage() {
   const { isSidebarCollapsed, handleToggleSidebarCollapse, isHydrated } =
     useSidebarCollapse();
 
-  const { loadingConversationIds, addLoadingConversation } =
-    useLoadingConversations();
-
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const { setStreaming, isStreaming } = useStreamingStatus();
+  
+
+  const isConversationStreamingFn = useCallback(
+    (conversationId: string) => {
+      return isStreaming(conversationId);
+    },
+    [isStreaming],
+  );
 
   const handleConversationCreated = useCallback(
     (conversation: Conversation) => {
@@ -55,16 +66,28 @@ export default function HomePage() {
     [],
   );
 
-  const handleConversationDeleted = useCallback((conversationId: string) => {
-    setConversations((prev) =>
-      prev.filter((conv) => conv.id !== conversationId),
-    );
-  }, []);
+  const handleConversationDeleted = useCallback(
+    (conversationId: string) => {
+      setConversations((prev) =>
+        prev.filter((conv) => conv.id !== conversationId),
+      );
+      setStreaming(conversationId, false);
+    },
+    [setStreaming],
+  );
 
-  const { isConnected } = useConversationEvents({
+  const handleStreamingStatusChange = useCallback(
+    (convId: string, isStreamingFlag: boolean) => {
+      setStreaming(convId, isStreamingFlag);
+    },
+    [setStreaming],
+  );
+
+  useConversationEvents({
     onConversationCreated: handleConversationCreated,
     onConversationUpdated: handleConversationUpdated,
     onConversationDeleted: handleConversationDeleted,
+    onStreamingStatusChange: handleStreamingStatusChange,
   });
 
   useEffect(() => {
@@ -123,7 +146,10 @@ export default function HomePage() {
     chatInputRef.current?.focus();
   };
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = async (
+    e?: React.FormEvent,
+    options?: { experimental_attachments?: Attachment[] },
+  ) => {
     if (!message.trim() || isLoading) return;
 
     setIsLoading(true);
@@ -141,8 +167,17 @@ export default function HomePage() {
       if (res.ok) {
         const newConversation = (await res.json()) as Conversation;
 
-        addLoadingConversation(newConversation.id);
         sessionStorage.setItem(`pendingMessage_${newConversation.id}`, message);
+
+        if (
+          options?.experimental_attachments &&
+          options.experimental_attachments.length > 0
+        ) {
+          sessionStorage.setItem(
+            `pendingAttachments_${newConversation.id}`,
+            JSON.stringify(options.experimental_attachments),
+          );
+        }
 
         router.push(`/chat/${newConversation.id}`);
       } else {
@@ -187,7 +222,7 @@ export default function HomePage() {
         setConversations={setConversations}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
-        loadingConversationIds={loadingConversationIds}
+        isConversationStreaming={isConversationStreamingFn}
       />
 
       <div className="relative z-10 flex flex-1 flex-col">
