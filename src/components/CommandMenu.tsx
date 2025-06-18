@@ -80,37 +80,24 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
       className="fixed inset-0 z-50"
     >
       {/* Overlay */}
-      <div
-        className="fixed inset-0 bg-black/30"
-        style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
-      />
+      <div className="fixed inset-0 bg-black/30 dark:bg-black/50" />
 
       {/* Command Menu */}
       <div
-        className="fixed top-1/2 left-1/2 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded border shadow-[0_4px_12px_rgba(5,81,206,0.15)]"
+        className="fixed top-1/2 left-1/2 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded border border-[rgba(5,81,206,0.12)] bg-[#F7F7F2] shadow-[0_4px_12px_rgba(5,81,206,0.15)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[#2a2a2a] dark:shadow-[0_4px_12px_rgba(91,155,213,0.15)]"
         role="dialog"
         aria-labelledby="command-menu-title"
-        style={{
-          backgroundColor: "#F7F7F2",
-          borderColor: "rgba(5,81,206,0.12)",
-        }}
       >
         <VisuallyHidden.Root>
           <Dialog.Title>Command Menu</Dialog.Title>
         </VisuallyHidden.Root>
 
         <Command
-          className={`rounded ${saans.className} text-sm font-medium`}
-          style={{ backgroundColor: "#F7F7F2" }}
+          className={`rounded bg-[#F7F7F2] dark:bg-[#2a2a2a] ${saans.className} text-sm font-medium`}
         >
           <Command.Input
             placeholder="Type a command or search..."
-            className="w-full border-0 border-b px-4 py-3 outline-none"
-            style={{
-              backgroundColor: "transparent",
-              borderColor: "rgba(5,81,206,0.12)",
-              color: "#4C5461",
-            }}
+            className="w-full border-0 border-b border-[rgba(5,81,206,0.12)] bg-transparent px-4 py-3 text-[#4C5461] outline-none placeholder:text-[#8B9BAE] dark:border-[rgba(255,255,255,0.12)] dark:text-[#E5E5E5] dark:placeholder:text-[#888]"
             value={input}
             onValueChange={setInput}
             onKeyDown={(e) => {
@@ -128,19 +115,17 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
           />
           <Command.List className="max-h-80 overflow-y-auto p-2">
             <Command.Empty
-              className="px-4 py-6 text-center"
-              style={{ color: "#8B9BAE" }}
+              className="px-4 py-6 text-center text-[#8B9BAE] dark:text-[#888]"
               data-cmdk-empty
             >
               {input.trim() ? (
                 <button
-                  className="rounded bg-[rgba(5,81,206,0.08)] px-4 py-2 text-[#0551CE] hover:bg-[rgba(5,81,206,0.15)] focus:ring-2 focus:ring-[#0551CE] focus:outline-none disabled:opacity-60"
+                  className="rounded bg-[rgba(5,81,206,0.08)] px-4 py-2 font-medium text-[#0551CE] hover:bg-[rgba(5,81,206,0.15)] focus:ring-2 focus:ring-[#0551CE] focus:outline-none disabled:opacity-60 dark:bg-[rgba(91,155,213,0.15)] dark:text-[#5B9BD5] dark:hover:bg-[rgba(91,155,213,0.25)] dark:focus:ring-[#5B9BD5]"
                   onClick={() => {
                     void handleAskAsNewChat();
                   }}
                   disabled={loading}
                   tabIndex={0}
-                  style={{ fontWeight: 500 }}
                 >
                   Ask &quot;{input}&quot; as a new chat
                 </button>
@@ -152,14 +137,11 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
             <Command.Group heading="Actions">
               <Command.Item
                 onSelect={handleNewChat}
-                className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:bg-[rgba(5,81,206,0.05)] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)] data-[selected=true]:bg-[rgba(5,81,206,0.08)]"
-                style={{
-                  color: "#4C5461",
-                }}
+                className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 text-[#4C5461] transition-all duration-200 hover:-translate-y-[0.5px] hover:bg-[rgba(5,81,206,0.05)] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)] data-[selected=true]:bg-[rgba(5,81,206,0.08)] dark:text-[#E5E5E5] dark:hover:bg-[rgba(91,155,213,0.1)] dark:hover:shadow-[0_2px_4px_rgba(91,155,213,0.1)] dark:data-[selected=true]:bg-[rgba(91,155,213,0.15)]"
               >
                 <Plus className="h-4 w-4" />
                 <span>New Chat</span>
-                <div className="ml-auto text-xs" style={{ color: "#8B9BAE" }}>
+                <div className="ml-auto text-xs text-[#8B9BAE] dark:text-[#888]">
                   ⌘ Shift O
                 </div>
               </Command.Item>
@@ -172,15 +154,12 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
                     key={conversation.id}
                     value={`${conversation.id} ${conversation.title}`}
                     onSelect={() => handleSelectConversation(conversation.id)}
-                    className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 transition-all duration-200 hover:-translate-y-[0.5px] hover:bg-[rgba(5,81,206,0.05)] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)] data-[selected=true]:bg-[rgba(5,81,206,0.08)]"
-                    style={{
-                      color: "#4C5461",
-                    }}
+                    className="flex cursor-pointer items-center gap-3 rounded px-4 py-3 text-[#4C5461] transition-all duration-200 hover:-translate-y-[0.5px] hover:bg-[rgba(5,81,206,0.05)] hover:shadow-[0_2px_4px_rgba(5,81,206,0.1)] data-[selected=true]:bg-[rgba(5,81,206,0.08)] dark:text-[#E5E5E5] dark:hover:bg-[rgba(91,155,213,0.1)] dark:hover:shadow-[0_2px_4px_rgba(91,155,213,0.1)] dark:data-[selected=true]:bg-[rgba(91,155,213,0.15)]"
                   >
                     <MessageSquare className="h-4 w-4" />
                     <div className="flex-1 truncate">
                       <div className="truncate">{conversation.title}</div>
-                      <div className="text-xs" style={{ color: "#8B9BAE" }}>
+                      <div className="text-xs text-[#8B9BAE] dark:text-[#888]">
                         {new Date(conversation.createdAt).toLocaleDateString()}
                       </div>
                     </div>

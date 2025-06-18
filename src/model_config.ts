@@ -23,7 +23,8 @@ export const MODEL_CONFIG = {
       webSearch: false,
       tools: true,
     },
-    description: "Mistral's multimodal model with vision capabilities (via Mistral)",
+    description:
+      "Mistral's multimodal model with vision capabilities (via Mistral)",
   }, // provided free of cost via mistral
   "Llama 3.1 8B": {
     provider: "openrouter" as const,
@@ -46,7 +47,6 @@ export const MODEL_CONFIG = {
     capabilities: {
       reasoning: true,
       vision: false,
-      documents: true,
       webSearch: false,
       tools: false,
     },
