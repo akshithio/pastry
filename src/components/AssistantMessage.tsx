@@ -58,7 +58,7 @@ export default function AssistantMessage({
           <div className="mb-4">
             <button
               onClick={() => setIsReasoningExpanded(!isReasoningExpanded)}
-              className="flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-left transition-all hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:hover:bg-amber-900"
+              className="flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-left transition-all hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:hover:bg-amber-900 cursor-pointer"
             >
               <div className="flex flex-1 items-center gap-2">
                 <div className="flex h-5 w-5 items-center justify-center rounded bg-amber-500 text-white">

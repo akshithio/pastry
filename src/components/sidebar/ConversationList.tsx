@@ -336,7 +336,7 @@ export default function ConversationList({
                       >
                         <button
                           onClick={(e) => handlePin(e, conv.id)}
-                          className={`rounded p-1 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.15)] dark:hover:shadow-[0_2px_4px_rgba(91,155,213,0.15)] ${
+                          className={`rounded p-1 cursor-pointer transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(5,81,206,0.15)] dark:hover:shadow-[0_2px_4px_rgba(91,155,213,0.15)] ${
                             conv.isPinned
                               ? "bg-[rgba(5,81,206,0.1)] dark:bg-[rgba(91,155,213,0.1)]"
                               : "bg-[rgba(5,81,206,0.05)] dark:bg-[rgba(255,255,255,0.05)]"
@@ -349,7 +349,7 @@ export default function ConversationList({
                         </button>
                         <button
                           onClick={(e) => handleDelete(e, conv.id)}
-                          className="rounded bg-[rgba(220,38,38,0.05)] p-1 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(220,38,38,0.15)] dark:bg-[rgba(239,68,68,0.05)] dark:hover:shadow-[0_2px_4px_rgba(239,68,68,0.15)]"
+                          className="rounded bg-[rgba(220,38,38,0.05)] p-1 transition-all duration-200 hover:-translate-y-[0.5px] hover:shadow-[0_2px_4px_rgba(220,38,38,0.15)] dark:bg-[rgba(239,68,68,0.05)] cursor-pointer dark:hover:shadow-[0_2px_4px_rgba(239,68,68,0.15)]"
                           title="Delete"
                         >
                           <Trash2 className="h-3 w-3 text-[#dc2626] dark:text-[#ef4444]" />

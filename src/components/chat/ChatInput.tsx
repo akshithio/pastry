@@ -54,7 +54,6 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     ref,
   ) => {
     const [dragOver, setDragOver] = useState(false);
-    const [webSearchEnabled, setWebSearchEnabled] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const {
@@ -190,11 +189,6 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     const secondaryButton = `${buttonBase} border border-[rgba(5,81,206,0.3)] bg-transparent text-[#0551CE] 
     shadow-[0_1px_3px_rgba(5,81,206,0.1)] hover:bg-[rgba(5,81,206,0.05)]
     dark:border-[rgba(255,255,255,0.3)] dark:text-[#5B9BD5] dark:hover:bg-[rgba(255,255,255,0.05)]`;
-    const toggleButton = `${buttonBase} border transition-all duration-200 ${
-      webSearchEnabled
-        ? "border-[#0551CE] bg-[#0551CE] text-[#F7F7F2] shadow-[0_1px_3px_rgba(5,81,206,0.2)] dark:border-[#5B9BD5] dark:bg-[#5B9BD5] dark:text-[#1a1a1a]"
-        : "border-[rgba(5,81,206,0.3)] bg-transparent text-[#0551CE] shadow-[0_1px_3px_rgba(5,81,206,0.1)] hover:bg-[rgba(5,81,206,0.05)] dark:border-[rgba(255,255,255,0.3)] dark:text-[#5B9BD5] dark:hover:bg-[rgba(255,255,255,0.05)]"
-    }`;
 
     return (
       <div
@@ -236,16 +230,6 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                 <div
                   className={`absolute top-2 right-2 flex gap-1 transition-opacity duration-200 ${dragOver ? "pointer-events-none opacity-0" : "opacity-100"}`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                    className={toggleButton}
-                    disabled={isLoading || disabled}
-                    title={`Web search ${webSearchEnabled ? "enabled" : "disabled"}`}
-                  >
-                    <Globe className="h-4 w-4" />
-                  </button>
-
                   {isLoading && onStopGeneration ? (
                     <button
                       type="button"
@@ -282,12 +266,12 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                       onModelSelect={onModelSelect}
                     />
                   )}
-                  {webSearchEnabled && (
-                    <span className="flex items-center gap-1 text-[#0551CE] dark:text-[#5B9BD5]">
-                      <Globe className="h-3 w-3" />
-                      Web search enabled
-                    </span>
-                  )}
+
+                  <span className="flex items-center gap-1 text-[#0551CE] dark:text-[#5B9BD5]">
+                    <Globe className="h-3 w-3" />
+                    Web search enabled
+                  </span>
+
                   {attachmentFiles.length > 0 && (
                     <span className="text-[#0551CE] dark:text-[#5B9BD5]">
                       {attachmentFiles.length} file
