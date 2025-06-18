@@ -18,6 +18,7 @@ import AuthScreen from "~/components/AuthScreen";
 import ChatMainArea from "~/components/chat/ChatMainArea";
 import CommandMenu from "~/components/CommandMenu";
 import Sidebar from "~/components/sidebar/Sidebar";
+import { useWebSearchStatus } from "~/components/WebSearchIndicator";
 import { MODEL_CONFIG, type ModelName } from "~/model_config";
 import type { Attachment, ExtendedMessage } from "~/types/chat";
 
@@ -27,6 +28,12 @@ export default function ChatPage() {
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   const { setStreaming, isStreaming } = useStreamingStatus();
+
+  const { searchStatus, handleStreamData, resetSearchStatus } =
+    useWebSearchStatus();
+
+  const [currentReasoning, setCurrentReasoning] = useState<string>("");
+  const [isReasoningStreaming, setIsReasoningStreaming] = useState(false);
 
   const {
     conversationId,
@@ -91,8 +98,129 @@ export default function ChatPage() {
       "x-vercel-ai-chat-id": conversationId,
     },
     onError: handleChatError,
-    onFinish: handleChatFinish,
+    onFinish: (message, options) => {
+      console.log("=== onFinish callback started ===");
+
+      setIsReasoningStreaming(false);
+
+      const finalReasoning = options?.reasoning || currentReasoning;
+
+      if (finalReasoning && finalReasoning.trim()) {
+        console.log(
+          "🧠 Setting final reasoning:",
+          finalReasoning.substring(0, 100),
+        );
+
+        setMessages((prevMessages) => {
+          const updatedMessages = [...prevMessages];
+          const lastMessageIndex = updatedMessages.length - 1;
+
+          if (
+            lastMessageIndex >= 0 &&
+            updatedMessages[lastMessageIndex].role === "assistant"
+          ) {
+            console.log("✅ Updating last assistant message with reasoning");
+            updatedMessages[lastMessageIndex] = {
+              ...updatedMessages[lastMessageIndex],
+              reasoning: finalReasoning,
+            } as any;
+          }
+
+          return updatedMessages;
+        });
+
+        setCurrentReasoning(finalReasoning);
+      } else {
+        console.log("❌ No reasoning available, clearing state");
+        setCurrentReasoning("");
+      }
+
+      handleChatFinish(message, options);
+    },
   });
+
+  useEffect(() => {
+    if (!data || data.length === 0) return;
+
+    console.log("🌊 Processing data array:", data.length, "items");
+
+    const latestData = data[data.length - 1];
+
+    if (!latestData) return;
+
+    try {
+      let processedData = latestData;
+
+      if (typeof latestData === "string") {
+        try {
+          processedData = JSON.parse(latestData);
+        } catch (parseError) {
+          console.log("Could not parse string data:", latestData);
+          return;
+        }
+      }
+
+      if (processedData && typeof processedData === "object") {
+        const item = processedData as {
+          type?: string;
+          toolCalls?: any[];
+          toolResults?: any[];
+          reasoning?: string;
+          text?: string;
+          textDelta?: string;
+          fullReasoning?: string;
+        };
+
+        if (item.type === "reasoning") {
+          console.log("🧠 Processing reasoning chunk");
+
+          if (item.fullReasoning) {
+            console.log(
+              "🧠 Using full reasoning from backend:",
+              item.fullReasoning.length,
+              "chars",
+            );
+            setCurrentReasoning(item.fullReasoning);
+          } else if (item.textDelta) {
+            console.log("🧠 Accumulating reasoning delta:", item.textDelta);
+            setCurrentReasoning((prev) => {
+              const newReasoning = prev + item.textDelta;
+              console.log("🧠 Updated reasoning length:", newReasoning.length);
+              return newReasoning;
+            });
+          }
+
+          setIsReasoningStreaming(true);
+        }
+
+        if (item.reasoning && item.type !== "reasoning") {
+          console.log(
+            "🧠 Processing complete reasoning:",
+            item.reasoning.substring(0, 100),
+          );
+          setCurrentReasoning(item.reasoning);
+          setIsReasoningStreaming(false);
+        }
+
+        if (item.type === "text" || item.type === "finish") {
+          console.log("📝 Text completion detected");
+          setIsReasoningStreaming(false);
+        }
+
+        if (
+          item.type === "tool-call" ||
+          item.type === "tool-result" ||
+          item.toolCalls ||
+          item.toolResults ||
+          item.type === "step-finish"
+        ) {
+          handleStreamData(processedData);
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error processing data item:", error);
+    }
+  }, [data, handleStreamData]);
 
   const {
     editingMessageIndex,
@@ -117,6 +245,16 @@ export default function ChatPage() {
   useEffect(() => {
     setStreaming(conversationId, isLoading);
   }, [isLoading, conversationId, setStreaming]);
+
+  useEffect(() => {
+    if (isLoading) {
+      resetSearchStatus();
+
+      setIsReasoningStreaming(false);
+    } else {
+      setIsReasoningStreaming(false);
+    }
+  }, [isLoading, resetSearchStatus]);
 
   const isConversationStreamingFn = (conversationId: string) => {
     return isStreaming(conversationId);
@@ -165,6 +303,9 @@ export default function ChatPage() {
     e?: React.FormEvent,
     options?: { experimental_attachments?: Attachment[] },
   ) => {
+    setCurrentReasoning("");
+    setIsReasoningStreaming(false);
+
     await handleSubmitWithAttachments(
       originalHandleSubmit,
       input,
@@ -271,6 +412,7 @@ export default function ChatPage() {
         content: msg.content,
         createdAt: msg.createdAt,
         experimental_attachments: (msg as any).experimental_attachments,
+        reasoning: (msg as any).reasoning,
       };
       return extendedMsg;
     })
@@ -334,6 +476,9 @@ export default function ChatPage() {
         onSaveEditedMessage={handleSaveEditedMessage}
         onCancelEdit={handleCancelEdit}
         onEditingContentChange={setEditingMessageContent}
+        searchStatus={searchStatus}
+        currentReasoning={currentReasoning}
+        isReasoningStreaming={isReasoningStreaming}
       />
     </div>
   );

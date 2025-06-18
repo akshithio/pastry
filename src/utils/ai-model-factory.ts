@@ -1,5 +1,11 @@
 import { google } from "@ai-sdk/google";
 import { mistral } from "@ai-sdk/mistral";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY!,
+  baseURL: "https://openrouter.ai/api/v1",
+});
 
 export function createAIModel(provider: string, modelId: string) {
   switch (provider) {
@@ -7,6 +13,8 @@ export function createAIModel(provider: string, modelId: string) {
       return mistral(modelId);
     case "google":
       return google(modelId);
+    case "openrouter":
+      return openrouter.chat(modelId);
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }

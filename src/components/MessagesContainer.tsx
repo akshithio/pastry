@@ -1,6 +1,7 @@
 import { type Message as AIMessage } from "@ai-sdk/react";
 import { ArrowDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { WebSearchStatus } from "~/types/chat";
 import {
   createExtendedMessage,
   isExtendedMessage,
@@ -9,6 +10,7 @@ import {
 } from "~/types/chat";
 import AssistantMessage from "./AssistantMessage";
 import UserMessage from "./UserMessage";
+import { WebSearchIndicator } from "./WebSearchIndicator";
 
 interface MessagesContainerProps {
   messages: Array<ExtendedMessage | AIMessage>;
@@ -18,9 +20,13 @@ interface MessagesContainerProps {
   isReadOnly?: boolean;
   editingMessageIndex: number | null;
   editingMessageContent: string;
+  searchStatus: WebSearchStatus | null;
   isSavingEdit: boolean;
   copiedMessageId: string | null;
   copiedUserMessageId: string | null;
+
+  currentReasoning?: string;
+  isReasoningStreaming?: boolean;
   onEditMessage: (messageIndex: number) => void;
   onCancelEdit: () => void;
   onEditingContentChange: (content: string) => void;
@@ -47,9 +53,12 @@ export default function MessagesContainer({
   isReadOnly = false,
   editingMessageIndex,
   editingMessageContent,
+  searchStatus,
   isSavingEdit,
   copiedMessageId,
   copiedUserMessageId,
+  currentReasoning,
+  isReasoningStreaming = false,
   onEditMessage,
   onCancelEdit,
   onEditingContentChange,
@@ -157,6 +166,8 @@ export default function MessagesContainer({
         ref={messagesContainerRef}
         className="mt-4 min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-4"
       >
+        <WebSearchIndicator searchStatus={searchStatus} />
+
         {messages.map((message, index) => {
           const extendedMessage = isExtendedMessage(message)
             ? message
@@ -192,6 +203,14 @@ export default function MessagesContainer({
                   onCopyResponse={onCopyResponse}
                   onRetryMessage={onRetryMessage}
                   onBranchConversation={onBranchConversation}
+                  reasoning={
+                    index === messages.length - 1 && isLoading
+                      ? currentReasoning
+                      : (extendedMessage as any).reasoning
+                  }
+                  isReasoningStreaming={
+                    index === messages.length - 1 && isReasoningStreaming
+                  }
                 />
               )}
             </div>
@@ -201,8 +220,13 @@ export default function MessagesContainer({
         {/* Loading Indicator */}
         {isLoading && (
           <div className="mx-auto max-w-4xl">
-            <div className="leading-relaxed text-[#4C5461] dark:text-[#B0B7C3]">
-              Thinking...
+            <div className="flex items-center gap-2 leading-relaxed text-[#4C5461] dark:text-[#B0B7C3]">
+              <span>Thinking</span>
+              <div className="flex gap-1">
+                <div className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-0.3s]"></div>
+                <div className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-0.15s]"></div>
+                <div className="h-1 w-1 animate-bounce rounded-full bg-current"></div>
+              </div>
             </div>
           </div>
         )}

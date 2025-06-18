@@ -1,6 +1,6 @@
 "use client";
 
-import { Paperclip, Plus, Send, StopCircle } from "lucide-react";
+import { Globe, Plus, Send, StopCircle } from "lucide-react";
 import React, { useRef, useState } from "react";
 import AttachmentDropZone from "~/components/chat/AttachmentDropZone";
 import AttachmentPreview from "~/components/chat/AttachmentPreview";
@@ -19,7 +19,7 @@ interface ChatInputProps {
   onSendMessage: (
     e?: React.FormEvent,
     options?: {
-      experimental_attachments?: Array<Omit<Attachment, "processedText">>;
+      experimental_attachments?: Attachment[];
     },
   ) => void;
   onKeyPress?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -54,6 +54,7 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     ref,
   ) => {
     const [dragOver, setDragOver] = useState(false);
+    const [webSearchEnabled, setWebSearchEnabled] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const {
@@ -109,6 +110,10 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         const attachments = convertToAISDKAttachments(attachmentFiles);
         onSendMessage(e, { experimental_attachments: attachments });
         clearAttachments();
+
+        if (typeof onMessageChange === "function") {
+          onMessageChange("");
+        }
       } catch (error) {
         console.error("Error submitting message:", error);
         alert("Failed to send message. Please try again.");
@@ -143,6 +148,10 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
         });
 
         clearAttachments();
+
+        if (typeof onMessageChange === "function") {
+          onMessageChange("");
+        }
       } else if (onKeyPress) {
         onKeyPress(e);
       }
@@ -181,6 +190,11 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
     const secondaryButton = `${buttonBase} border border-[rgba(5,81,206,0.3)] bg-transparent text-[#0551CE] 
     shadow-[0_1px_3px_rgba(5,81,206,0.1)] hover:bg-[rgba(5,81,206,0.05)]
     dark:border-[rgba(255,255,255,0.3)] dark:text-[#5B9BD5] dark:hover:bg-[rgba(255,255,255,0.05)]`;
+    const toggleButton = `${buttonBase} border transition-all duration-200 ${
+      webSearchEnabled
+        ? "border-[#0551CE] bg-[#0551CE] text-[#F7F7F2] shadow-[0_1px_3px_rgba(5,81,206,0.2)] dark:border-[#5B9BD5] dark:bg-[#5B9BD5] dark:text-[#1a1a1a]"
+        : "border-[rgba(5,81,206,0.3)] bg-transparent text-[#0551CE] shadow-[0_1px_3px_rgba(5,81,206,0.1)] hover:bg-[rgba(5,81,206,0.05)] dark:border-[rgba(255,255,255,0.3)] dark:text-[#5B9BD5] dark:hover:bg-[rgba(255,255,255,0.05)]"
+    }`;
 
     return (
       <div
@@ -224,21 +238,12 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                 >
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className={secondaryButton}
-                    disabled={
-                      isLoading ||
-                      disabled ||
-                      attachmentFiles.length >= maxAttachments ||
-                      remainingMB <= 0
-                    }
-                    title={
-                      remainingMB <= 0
-                        ? `Total file size limit (${maxTotalFileSize}MB) reached`
-                        : `Attach files (${remainingMB.toFixed(1)}MB remaining)`
-                    }
+                    onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                    className={toggleButton}
+                    disabled={isLoading || disabled}
+                    title={`Web search ${webSearchEnabled ? "enabled" : "disabled"}`}
                   >
-                    <Paperclip className="h-4 w-4" />
+                    <Globe className="h-4 w-4" />
                   </button>
 
                   {isLoading && onStopGeneration ? (
@@ -277,6 +282,12 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                       onModelSelect={onModelSelect}
                     />
                   )}
+                  {webSearchEnabled && (
+                    <span className="flex items-center gap-1 text-[#0551CE] dark:text-[#5B9BD5]">
+                      <Globe className="h-3 w-3" />
+                      Web search enabled
+                    </span>
+                  )}
                   {attachmentFiles.length > 0 && (
                     <span className="text-[#0551CE] dark:text-[#5B9BD5]">
                       {attachmentFiles.length} file
@@ -288,7 +299,19 @@ const ChatInput = React.forwardRef<HTMLTextAreaElement, ChatInputProps>(
                 </div>
                 <button
                   type="button"
-                  className="cursor-pointer p-1 text-[#4C5461]/70 transition-colors hover:bg-[rgba(5,81,206,0.05)] hover:text-[#0551CE] dark:text-[#B0B7C3]/70 dark:hover:text-[#5B9BD5]"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="cursor-pointer p-1 text-[#4C5461]/70 transition-colors hover:bg-[rgba(5,81,206,0.05)] hover:text-[#0551CE] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[#B0B7C3]/70 dark:hover:text-[#5B9BD5]"
+                  disabled={
+                    isLoading ||
+                    disabled ||
+                    attachmentFiles.length >= maxAttachments ||
+                    remainingMB <= 0
+                  }
+                  title={
+                    remainingMB <= 0
+                      ? `Total file size limit (${maxTotalFileSize}MB) reached`
+                      : `Attach files (${remainingMB.toFixed(1)}MB remaining)`
+                  }
                 >
                   <Plus className="h-4 w-4" />
                 </button>

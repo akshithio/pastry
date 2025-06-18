@@ -1,9 +1,5 @@
 import { type Message as AIMessage, type FinishReason } from "ai";
-import type {
-  Message,
-  CreateMessage,
-  ChatRequestOptions,
-} from 'ai';
+import type { Message, CreateMessage, ChatRequestOptions } from "ai";
 import { useCallback, useEffect } from "react";
 import { hasLatex } from "~/components/chat/MarkdownRenderer";
 import { useStreamingStatus } from "~/hooks/useStreamingStatus";
@@ -74,9 +70,9 @@ export function useChatHandlers(
       input: string,
       setInput: (value: string) => void,
       append: (
-      message: Message | CreateMessage,
-      chatRequestOptions?: ChatRequestOptions,
-    ) => Promise<string | null | undefined>,
+        message: Message | CreateMessage,
+        chatRequestOptions?: ChatRequestOptions,
+      ) => Promise<string | null | undefined>,
       e?: React.FormEvent,
       options?: { experimental_attachments?: Attachment[] },
     ) => {

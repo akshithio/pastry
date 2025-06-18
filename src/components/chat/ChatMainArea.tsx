@@ -1,11 +1,15 @@
 import { type Message as AIMessage } from "@ai-sdk/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ChatInput from "~/components/chat/ChatInput";
 import ConversationHeader from "~/components/ConversationHeader";
 import MessagesContainer from "~/components/MessagesContainer";
 import { useAutoResume, type DataPart } from "~/hooks/useAutoResume";
 import { type ModelName } from "~/model_config";
-import { type Attachment, type ExtendedMessage } from "~/types/chat";
+import {
+  type Attachment,
+  type ExtendedMessage,
+  type WebSearchStatus,
+} from "~/types/chat";
 import type { Conversation } from "~/types/conversations";
 import { ShareDialog } from "../dialogs/ShareDialog";
 
@@ -57,6 +61,9 @@ interface ChatMainAreaProps {
   ) => Promise<void>;
   onCancelEdit: () => void;
   onEditingContentChange: (content: string) => void;
+  searchStatus: WebSearchStatus | null;
+  currentReasoning?: string;
+  isReasoningStreaming?: boolean;
 }
 
 export default function ChatMainArea({
@@ -91,7 +98,92 @@ export default function ChatMainArea({
   onSaveEditedMessage,
   onCancelEdit,
   onEditingContentChange,
+  searchStatus,
+  currentReasoning,
+  isReasoningStreaming = false,
 }: ChatMainAreaProps) {
+  useEffect(() => {
+    console.log("🧠 REASONING STATE CHANGE:", {
+      currentReasoning,
+      currentReasoningLength: currentReasoning?.length || 0,
+      isReasoningStreaming,
+      timestamp: new Date().toISOString(),
+    });
+  }, [currentReasoning, isReasoningStreaming]);
+
+  useEffect(() => {
+    console.log("📊 DATA ARRAY CHANGE:", {
+      dataLength: data?.length || 0,
+      dataTypes: data?.map((d) => d.type) || [],
+      dataContents:
+        data?.map((d) => ({
+          type: d.type,
+          contentLength:
+            typeof d.content === "string" ? d.content.length : "not-string",
+          contentPreview:
+            typeof d.content === "string"
+              ? d.content.slice(0, 100) + "..."
+              : d.content,
+        })) || [],
+      timestamp: new Date().toISOString(),
+    });
+  }, [data]);
+
+  useEffect(() => {
+    console.log("💬 MESSAGES CHANGE:", {
+      messagesLength: messages.length,
+      messagesWithReasoning: messages.map((msg, idx) => ({
+        index: idx,
+        id: msg.id,
+        role: msg.role,
+        hasReasoning: !!(msg as any).reasoning,
+        reasoningLength: (msg as any).reasoning?.length || 0,
+        reasoningPreview: (msg as any).reasoning
+          ? (msg as any).reasoning.slice(0, 50) + "..."
+          : null,
+        contentLength:
+          typeof msg.content === "string" ? msg.content.length : "not-string",
+      })),
+      timestamp: new Date().toISOString(),
+    });
+  }, [messages]);
+
+  useEffect(() => {
+    console.log("⏳ LOADING STATE CHANGE:", {
+      isLoading,
+      isReasoningStreaming,
+      currentReasoningExists: !!currentReasoning,
+      timestamp: new Date().toISOString(),
+    });
+  }, [isLoading, isReasoningStreaming, currentReasoning]);
+
+  console.log("=== ChatMainArea Debug ===", {
+    messagesLength: messages.length,
+    currentReasoning,
+    isReasoningStreaming,
+    lastMessage: messages[messages.length - 1],
+    lastMessageHasReasoning:
+      messages[messages.length - 1] &&
+      (messages[messages.length - 1] as any).reasoning,
+    dataArray: data,
+    dataArrayLength: data?.length || 0,
+    lastDataItem: data && data.length > 0 ? data[data.length - 1] : null,
+
+    reasoningDebug: {
+      currentReasoningType: typeof currentReasoning,
+      currentReasoningTruthy: !!currentReasoning,
+      currentReasoningEmpty: currentReasoning === "",
+      currentReasoningUndefined: currentReasoning === undefined,
+      currentReasoningNull: currentReasoning === null,
+    },
+    dataDebug: {
+      dataIsArray: Array.isArray(data),
+      dataHasReasoningChunks:
+        data?.some((d) => d.type === "reasoning") || false,
+      reasoningChunks: data?.filter((d) => d.type === "reasoning") || [],
+    },
+  });
+
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrlCopied, setShareUrlCopied] = useState(false);
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
@@ -179,6 +271,13 @@ export default function ChatMainArea({
       return;
     }
 
+    console.log("🚀 CHAT SUBMIT:", {
+      isLoading,
+      editingMessageIndex,
+      options,
+      timestamp: new Date().toISOString(),
+    });
+
     handleSubmit(e, options);
 
     setTimeout(() => {
@@ -229,6 +328,7 @@ export default function ChatMainArea({
         messages={messages}
         isLoading={isLoading}
         error={error}
+        searchStatus={searchStatus}
         isOwner={isOwner}
         isReadOnly={isReadOnly}
         editingMessageIndex={editingMessageIndex}
@@ -236,6 +336,8 @@ export default function ChatMainArea({
         isSavingEdit={isSavingEdit}
         copiedMessageId={copiedMessageId}
         copiedUserMessageId={copiedUserMessageId}
+        currentReasoning={currentReasoning}
+        isReasoningStreaming={isReasoningStreaming}
         onEditMessage={onEditMessage}
         onCancelEdit={onCancelEdit}
         onEditingContentChange={onEditingContentChange}

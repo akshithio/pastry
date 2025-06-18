@@ -82,7 +82,7 @@ const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             <button
               type="button"
               onClick={() => onRemove(att.id)}
-              className="absolute -top-1 -right-1 bg-[#dc2626] p-1 text-white hover:bg-[#b91c1c] dark:bg-[#ef4444] dark:hover:bg-[#dc2626]"
+              className="absolute -top-1 -right-1 cursor-pointer bg-[#dc2626] p-1 text-white hover:bg-[#b91c1c] dark:bg-[#ef4444] dark:hover:bg-[#dc2626]"
             >
               <X className="h-3 w-3" />
             </button>

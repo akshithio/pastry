@@ -55,16 +55,18 @@ model Session {
 }
 
 model User {
-    id            String    @id @default(cuid())
-    name          String?
-    email         String?   @unique
-    emailVerified DateTime?
-    image         String?
-    accounts      Account[]
-    sessions      Session[]
-    posts         Post[]
-    conversations Conversation[]
-    messages      Message[]
+    id              String    @id @default(cuid())
+    name            String?
+    email           String?   @unique
+    emailVerified   DateTime?
+    image           String?
+    openRouterApiKey String? 
+    accounts        Account[]
+    sessions        Session[]
+    posts           Post[]
+    conversations   Conversation[]
+    messages        Message[]
+    preferences     UserPreferences?
 }
 
 model VerificationToken {
@@ -98,13 +100,14 @@ model Message {
   content         String    @db.Text
   isStreaming     Boolean   @default(false)
   streamId        String?
+  reasoning String? // Add this field
   partialContent  String?   @db.Text
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  attachments     MessageAttachment[] // Add this line
+  attachments     MessageAttachment[]
   
   @@map("messages")
 }
@@ -128,11 +131,27 @@ model MessageAttachment {
   messageId   String
   name        String
   contentType String
-  url         String   @db.Text // Store data URLs
+  url         String   @db.Text
   size        Int?
   createdAt   DateTime @default(now())
   
   message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   
   @@map("message_attachments")
+}
+
+model UserPreferences {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  userName       String?
+  userRole       String?
+  traits         String[]
+  additionalInfo String?  @db.Text
+  disableComments Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
 }

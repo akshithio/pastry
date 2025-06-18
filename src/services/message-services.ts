@@ -43,16 +43,17 @@ export async function createAssistantMessage(
   content: string,
   conversationId: string,
   userId: string,
-  streamId?: string,
-  isStreaming = false,
+  streamId: string | null = null,
+  isStreaming: boolean = false,
+  reasoning?: string,
 ) {
   return await db.message.create({
     data: {
       role: "assistant",
       content,
       isStreaming,
-      ...(streamId && { streamId }),
-      ...(isStreaming && { partialContent: "" }),
+      streamId,
+      reasoning,
       conversation: {
         connect: {
           id: conversationId,
@@ -101,46 +102,55 @@ export async function updatePartialContent(
 
 export function processMessagesForAI(messages: ChatMessage[]) {
   return messages.map((msg) => {
-    if (
-      msg.experimental_attachments &&
-      msg.experimental_attachments.length > 0
-    ) {
-      const content = [
-        { type: "text", text: msg.content },
-        ...msg.experimental_attachments
-          .filter((att) => att.contentType.startsWith("image/"))
-          .map((att) => ({
-            type: "image" as const,
-            image: att.url,
-          })),
-      ];
+    const attachments =
+      msg.experimental_attachments && msg.experimental_attachments.length > 0
+        ? msg.experimental_attachments
+        : msg.attachments || [];
 
-      return {
-        role: msg.role,
-        content,
-      };
+    let textContent = msg.content || "";
+
+    const imageParts: Array<{ type: "image"; image: string }> = [];
+
+    if (attachments && attachments.length > 0) {
+      attachments.forEach((att) => {
+        if (!att || typeof att !== "object") return;
+
+        if (att.contentType?.startsWith("image/") && att.url) {
+          imageParts.push({ type: "image", image: att.url });
+        } else if (att.contentType === "application/pdf") {
+          const pdfText = (att.processedText || att.content || "").trim();
+          if (pdfText) {
+            textContent +=
+              `\n\n--- PDF Document: ${att.name || "Unnamed"} ---\n` +
+              pdfText +
+              "\n--- End of PDF Document ---";
+          }
+        }
+      });
     }
 
-    if (msg.attachments && msg.attachments.length > 0) {
-      const content = [
-        { type: "text", text: msg.content },
-        ...msg.attachments
-          .filter((att) => att.contentType.startsWith("image/"))
-          .map((att) => ({
-            type: "image" as const,
-            image: att.url,
-          })),
-      ];
-
+    if (imageParts.length > 0) {
       return {
         role: msg.role,
-        content,
-      };
+        content: [{ type: "text", text: textContent }, ...imageParts],
+      } as const;
     }
 
     return {
       role: msg.role,
-      content: msg.content,
-    };
+      content: textContent,
+    } as const;
+  });
+}
+
+export async function updateMessageWithReasoning(
+  messageId: string,
+  reasoning: string,
+) {
+  return await db.message.update({
+    where: { id: messageId },
+    data: {
+      reasoning: reasoning,
+    },
   });
 }

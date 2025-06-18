@@ -1,7 +1,6 @@
-import { type NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { auth } from "~/server/auth/config";
 import type { Conversation } from "@prisma/client";
+import { NextResponse, type NextRequest } from "next/server";
+import { auth } from "~/server/auth/config";
 
 interface ConversationEvent {
   type:
@@ -31,14 +30,12 @@ export async function GET(req: NextRequest) {
       }
       connections.get(session.user.id)?.add(controller);
 
-      // Send initial connection message
       controller.enqueue(
         new TextEncoder().encode(
           `data: ${JSON.stringify({ type: "connected" })}\n\n`,
         ),
       );
 
-      // Handle client disconnect
       req.signal.addEventListener("abort", () => {
         connections.get(session.user.id)?.delete(controller);
         if (connections.get(session.user.id)?.size === 0) {

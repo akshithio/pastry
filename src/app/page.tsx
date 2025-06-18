@@ -36,7 +36,6 @@ export default function HomePage() {
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   const { setStreaming, isStreaming } = useStreamingStatus();
-  
 
   const isConversationStreamingFn = useCallback(
     (conversationId: string) => {

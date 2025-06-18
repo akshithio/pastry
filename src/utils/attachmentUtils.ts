@@ -68,26 +68,56 @@ export const processPDF = async (file: File): Promise<string> => {
 
 export const convertToAISDKAttachments = (
   files: AttachmentFile[],
-): Array<Omit<Attachment, "processedText">> => {
+): Attachment[] => {
+  console.log("🔄 Converting files to AI SDK attachments:", files.length);
+
   return files
-    .filter((f) => f.preview ?? f.processedText)
+    .filter((f) => {
+      const hasContent = f.type === "pdf" ? f.processedText : f.preview;
+      console.log(
+        `  - File ${f.name}: type=${f.type}, hasContent=${!!hasContent}`,
+      );
+      return hasContent;
+    })
     .map((f) => {
-      const baseAttachment: Omit<Attachment, "processedText"> = {
+      console.log(`  - Processing file: ${f.name} (${f.type})`);
+
+      if (f.type === "pdf" && f.processedText) {
+        console.log(
+          `    - PDF with ${f.processedText.length} chars of processed text`,
+        );
+
+        const attachment: Attachment = {
+          name: f.name,
+          contentType: f.file.type,
+          url: `data:text/plain;base64,${unicodeToBase64(f.processedText)}`,
+          processedText: f.processedText,
+          content: f.processedText,
+        };
+
+        console.log(
+          `    - Created PDF attachment with content length: ${attachment.content?.length}`,
+        );
+        return attachment;
+      }
+
+      if (f.preview) {
+        console.log(`    - Image with preview URL`);
+        return {
+          name: f.name,
+          contentType: f.file.type,
+          url: f.preview,
+        };
+      }
+
+      console.log(`    - Other file type, using base64 encoding`);
+      return {
         name: f.name,
         contentType: f.file.type,
         url:
           f.preview ??
           `data:text/plain;base64,${unicodeToBase64(f.processedText ?? "")}`,
       };
-
-      if (f.type === "pdf" && f.processedText) {
-        return {
-          ...baseAttachment,
-          content: `PDF Document: ${f.name}\n\nContent:\n${f.processedText}`,
-        };
-      }
-
-      return baseAttachment;
     });
 };
 

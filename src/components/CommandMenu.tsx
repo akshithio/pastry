@@ -56,9 +56,10 @@ export default function CommandMenu({ conversations = [] }: CommandMenuProps) {
       });
       if (res.ok) {
         const newConversation = (await res.json()) as Conversation;
-        void router.push(
-          `/chat/${newConversation.id}?initialPrompt=${encodeURIComponent(input)}`,
-        );
+
+        sessionStorage.setItem(`pendingMessage_${newConversation.id}`, input);
+
+        router.push(`/chat/${newConversation.id}`);
         setOpen(false);
         setInput("");
       } else {
