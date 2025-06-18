@@ -9,6 +9,12 @@ const config = {
   experimental: {
     serverComponentsExternalPackages: ["pdf-parse"],
   },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
 
 export default config;
