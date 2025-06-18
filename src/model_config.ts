@@ -53,19 +53,6 @@ export const MODEL_CONFIG = {
     description:
       "DeepSeek's open-source model with open reasoning tokens (via OpenRouter)",
   }, // provided free of cost via openrouter
-  "Claude 3.5 Haiku": {
-    provider: "openrouter" as const,
-    modelId: "anthropic/claude-3.5-haiku",
-    displayName: "Claude 3.5 Haiku",
-    capabilities: {
-      reasoning: true,
-      vision: true,
-      documents: true,
-      webSearch: false,
-      tools: true,
-    },
-    description: "Anthropic's fast model (via OpenRouter)",
-  },
 } as const;
 
 export type ModelName = keyof typeof MODEL_CONFIG;
