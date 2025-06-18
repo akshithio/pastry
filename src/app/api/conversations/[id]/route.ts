@@ -6,8 +6,9 @@ import { broadcastToUser } from "../events/route";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: { id: string } },
 ) {
+  const { params } = context;
   const session = await auth();
 
   try {
